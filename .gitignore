@@ -20,3 +20,9 @@ kernel/.*.cmd
 kernel/.*.o
 kernel/..*.cmd
 kernel/.module-common.o
+
+# vendored reference build artefacts
+kernel/mldsa/*.o
+kernel/mldsa/test_cross
+kernel/mldsa/.*.cmd
+kernel/.modules.order.cmd

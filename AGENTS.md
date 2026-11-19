@@ -8,8 +8,8 @@ Rust 1.88+ (verified on 1.100.0). Toolchain lives at `$HOME/.cargo/bin`; add it 
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
-cargo build            # all three crates
-cargo test             # 89 tests, all pass
+cargo build            # all crates
+cargo test             # 129 tests, all pass
 cargo clippy --all-targets   # must stay clean
 cargo fmt --all
 ```
@@ -86,11 +86,13 @@ by deleting one layer thinking the test will catch you.
 `crates/sovereign-tunnel` is a real UDP transport: per-peer replay windows, bucket padding, and
 chaff. It has been exercised over real loopback sockets, not only in memory.
 
-`kernel/` contains an out-of-tree module. `insmod` returns EPERM in this container (no
-`CAP_SYS_MODULE`), so it is exercised in a QEMU VM instead: `./kernel/vm/run.sh` builds it,
-boots a stock Debian kernel, loads it, runs 16 checks against `/dev/sovereign_gate`, and unloads
-it. That covers device registration, `file_operations`, `copy_from_user`, the state machine, and
-the kernel's own `hmac(sha256)`. Concurrency under load and real hardware remain untested.
+`kernel/` contains three out-of-tree modules. `insmod` returns EPERM in this container (no
+`CAP_SYS_MODULE`), so they are exercised in a QEMU VM instead: `./kernel/vm/run.sh` builds them,
+boots a stock Debian kernel with `intel-iommu` and a QEMU `edu` PCI device, loads all three, and
+asserts 12 behaviours. The gate module is covered by 16 in-kernel checks (device registration,
+`file_operations`, `copy_from_user`, the state machine, `hmac(sha256)`); `sov_iommu.ko` by a real
+DMA test; `sov_mldsa.ko` by 8 ML-DSA-87 checks. Concurrency under load and real hardware remain
+untested.
 
 The decision logic lives in `kernel/sov_core.h`, free of kernel APIs, so the same header compiles
 into `test_sov_core.c` — 14 tests via `make -C kernel test`, no kernel needed.
@@ -104,13 +106,39 @@ you change the signature of `sov_validate`, keep the wire-bytes contract.
 
 Still absent, and must not be described as present:
 
-* IOMMU isolation and DMA containment. The module gates a chardev; a device already bound to a
-  driver bypasses it entirely.
-* Post-quantum verification in the kernel. The module checks `hmac(sha256)`, not the hybrid
-  ECDSA + ML-DSA-87 signature the bridge produces.
+* **The gate does not call the ML-DSA verifier.** `sov_mldsa.ko` verifies ML-DSA-87 correctly
+  (proven in-kernel), but `sovereign_gate.ko` still accepts grants on `hmac(sha256)` alone.
+  Wiring them needs a grant format carrying the public key and both signature halves.
+* **No ECDSA P-384 verifier in kernel space**, so the hybrid check cannot be completed there.
+* **IOMMU containment covers one device, chosen by BDF.** `sov_iommu.ko` genuinely contains it
+  (real DMA lands when mapped, dropped when not), but it does not mediate PCIe enumeration and
+  the gate does not route through it.
 * Remote hardware attestation (TPM 2.0, TDX, SEV). No such devices exist in this container.
 * Onion routing, LoRa mesh, QUIC mimicry. The tunnel is a plain-UDP transport with replay
   protection and padding; padding hides length, not timing.
+
+## Kernel ML-DSA-87 notes (learned the hard way)
+
+* **The kernel has no `<stdint.h>` or `<stddef.h>`.** Probed it: `#include <stdint.h>` fails to
+  compile in a module. `kernel/mldsa/shim/` maps `uint32_t` etc. onto `linux/types.h`, and the
+  Kbuild `-I` flags put it first.
+* **The reference verifier needs ~60 KiB of stack.** Kernel stack is 16 KiB. `verify_only.c`
+  allocates one `kzalloc` workspace and frees it on every exit path, including the error paths.
+  Do not move those buffers back to locals.
+* **Extract, do not rewrite.** `verify_only.c` is the upstream `crypto_sign_verify_internal`
+  verbatim, minus the 257-byte context buffer (the caller builds the FIPS 204 prefix instead).
+  The point of vendoring is that the algorithm is not mine to get wrong.
+* **Symbols are namespaced** by `DILITHIUM_NAMESPACE` in `config.h`; include `mldsa/sign.h` so
+  `crypto_sign_verify_internal` resolves to `pqcrystals_dilithium5_ref_verify_internal`.
+* **Signing and keygen are not compiled.** `randombytes.c` aborts if called, which it never is
+  on the verify path. Keep it that way — the module must not link an RNG.
+* **Test vectors are generated, not typed.** `sov_mldsa_test_vectors.h` comes from
+  `cargo test -p sovereign-crypto --test pq_kat -- --nocapture`. Regenerate, do not hand-edit.
+* **A bit-flip test must target the code path it claims to test.** My first "corrupted
+  signature" test flipped a bit in `z`; when I mutated the `c_tilde` comparison to one byte, the
+  test still passed. The tests now flip a bit at `sig[32]` (inside `c_tilde`, past byte 0) and in
+  the hint. Mutation check that actually fails: deleting the whole `c_tilde` comparison makes
+  two checks red and the VM verdict exit non-zero.
 
 ## Cross-language invariants
 
@@ -140,11 +168,11 @@ added to close that. Worth remembering — a test that only checks a length prov
 ## Build and test
 
 ```sh
-cargo test --all              # 128 Rust tests
+cargo test --all              # 129 Rust tests
 cargo clippy --all-targets -- -D warnings
 make -C kernel test           # 14 C tests, runs here
-make -C kernel                # module build only; cannot be loaded here
-./kernel/vm/run.sh            # boots QEMU, loads the module, proves it works
+make -C kernel                # builds sovereign_gate.ko, sov_iommu.ko, sov_mldsa.ko
+./kernel/vm/run.sh            # boots QEMU, loads all three, asserts 12 behaviours
 ```
 
 Three implementations must agree on the grant tag: Rust (`sovereign-crypto::grant_tag`), C

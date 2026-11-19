@@ -51,6 +51,7 @@ echo "work:   $WORK"
 say "building module"
 make -C "$ROOT/kernel" KDIR="$KERNEL_BUILD" >/dev/null
 [ -f "$ROOT/kernel/sovereign_gate.ko" ] || { echo "module build failed" >&2; exit 1; }
+[ -f "$ROOT/kernel/sov_mldsa.ko" ] || { echo "sov_mldsa.ko missing: run make -C kernel" >&2; exit 1; }
 
 # --- mint a grant with the real bridge -----------------------------------------------------
 # The grant carries an expiry, so it has to be minted at run time, not committed.
@@ -95,7 +96,7 @@ echo "blob:   109 bytes (77 token + 32 hmac tag)"
 say "staging initramfs"
 STAGE=$WORK/stage
 mkdir -p "$STAGE/bin" "$STAGE/dev" "$STAGE/proc" "$STAGE/sys" "$STAGE/tmp"
-cp "$ROOT/kernel/sovereign_gate.ko" "$STAGE/"
+cp "$ROOT/kernel/sovereign_gate.ko" "$ROOT/kernel/sov_iommu.ko" "$ROOT/kernel/sov_mldsa.ko" "$STAGE/"
 cp /bin/busybox "$STAGE/bin/" 2>/dev/null || cp /usr/bin/busybox "$STAGE/bin/"
 for a in sh mount mknod cat dmesg poweroff; do ln -sf busybox "$STAGE/bin/$a"; done
 
@@ -114,36 +115,9 @@ PY
 
 gcc -static -O2 -Wall -I"$STAGE" -o "$STAGE/bin/vmt" "$HERE/vmt.c"
 gcc -static -O2 -Wall -I"$STAGE" -o "$STAGE/bin/e2e_test" "$HERE/e2e_test.c"
+gcc -static -O2 -Wall -Wextra -o "$STAGE/bin/iommu_test" "$HERE/iommu_test.c"
 
-cat > "$STAGE/init" <<EOF
-#!/bin/sh
-export PATH=/bin
-mount -t proc none /proc
-mount -t sysfs none /sys
-mount -t devtmpfs none /dev 2>/dev/null
-[ -e /dev/console ] || mknod /dev/console c 5 1
-
-echo "=== BOOTED: \$(uname -r) ==="
-
-insmod /sovereign_gate.ko root_key_hex=$ROOT_KEY
-echo "insmod_exit=\$?"
-ls -l /dev/sovereign_gate
-
-echo "=== gate behaviour ==="
-/bin/vmt
-echo "vmt_exit=\$?"
-
-echo "=== end-to-end ==="
-/bin/e2e_test
-echo "e2e_exit=\$?"
-
-echo "=== dmesg ==="
-dmesg | grep -i sovereign
-
-rmmod sovereign_gate
-echo "rmmod_exit=\$?"
-poweroff -f
-EOF
+sed "s/@ROOT_KEY@/$ROOT_KEY/" "$HERE/init.sh" > "$STAGE/init"
 chmod +x "$STAGE/init"
 
 ( cd "$STAGE" && find . | cpio -o -H newc 2>/dev/null | gzip -1 > "$WORK/initramfs.gz" )
@@ -154,10 +128,13 @@ LOG=$WORK/console.log
 # -serial file: rather than shell redirection: with -nographic, QEMU writes the console to
 # stdin/stdout, and a redirected stdout can be buffered away entirely.
 timeout 300 qemu-system-x86_64 \
+-machine q35 \
 -m 512 \
 -kernel "$KERNEL_IMAGE" \
 -initrd "$WORK/initramfs.gz" \
--append "console=ttyS0 panic=-1 quiet" \
+-append "console=ttyS0 panic=-1 quiet intel_iommu=on iommu=pt" \
+-device intel-iommu \
+-device edu \
 -display none -serial "file:$LOG" -monitor none -no-reboot >/dev/null 2>&1 || true
 
 sed -n '/=== BOOTED/,$p' "$LOG"
@@ -177,6 +154,14 @@ check 'insmod_exit=0' 'module loaded'
 check 'RESULT: all passed' 'every gate test passed in-kernel'
 check 'RESULT: end-to-end passed' 'kernel accepted a sovereign-bridge grant'
 check 'rmmod_exit=0' 'module unloaded cleanly'
+check 'iommu_insmod_exit=0' 'IOMMU module loaded'
+check 'RESULT: iommu passed' 'IOMMU state machine behaves'
+check 'sov_iommu: selftest passed' 'device DMA lands when mapped and is dropped when not'
+check 'iommu_rmmod_exit=0' 'IOMMU module unloaded cleanly'
+check 'sov_mldsa:   ok   valid signature accepted' 'kernel verified a Rust-signed ML-DSA-87 grant'
+check 'sov_mldsa:   ok   corrupted signature rejected' 'kernel rejected a tampered ML-DSA-87 signature'
+check 'sov_mldsa: selftest passed' 'ML-DSA-87 self-test passed in-kernel'
+check 'mldsa_rmmod_exit=0' 'ML-DSA module unloaded cleanly'
 
 if [ "$fail" -ne 0 ]; then
 echo

@@ -1,26 +1,28 @@
 // Sovereign plug-in gate: kernel module implementing layer 2 of the design.
 //
-// STATUS: compiles against 6.8 headers; has never been loaded. This container runs with no
-// CAP_SYS_MODULE (init_module returns EPERM), so nothing here has executed in a kernel.
+// STATUS: builds against 6.8 and 6.12 headers, and runs in a QEMU VM. This container has no
+// CAP_SYS_MODULE, so `kernel/vm/run.sh` boots a real kernel and loads it there. See
+// kernel/README.md for exactly what that does and does not prove.
 //
-// What is genuinely implemented, and tested:
+// What is genuinely implemented and tested:
 //
 //   * Token parsing, expiry, rights and tag checks, and the Quarantined -> Active state machine
-//     all live in sov_core.h, which is also compiled into kernel/test_sov_core.c and run on this
-//     machine by `make -C kernel test`. Those 11 tests pass.
+//     live in sov_core.h, also compiled into kernel/test_sov_core.c and run without a kernel by
+//     `make -C kernel test`.
 //   * A Rust test in sovereign-ipc asserts the token layout matches the real encoder.
+//   * Device registration, file_operations, copy_from_user, and the kernel's hmac(sha256) are
+//     exercised in the VM by 16 checks.
 //
-// What is NOT implemented, despite the design document claiming it:
+// What is NOT implemented here (sov_iommu.ko covers DMA containment separately):
 //
-//   * No IOMMU isolation. Real DMA containment needs iommu_map/unmap and a device-group
-//     assignment. None of that is here, so a device you have opened can still DMA wherever the
-//     platform lets it. This is the largest gap between this file and the design.
-//   * No ECDSA or ML-DSA verification. sov_hmac_sha256 is wired to the kernel's hmac(sha256),
-//     which is not the hybrid signature sovereign-crypto produces. The user-space grant is
-//     signed with ECDSA P-384 AND ML-DSA-87; this module cannot check either.
+//   * No IOMMU isolation in this module. It gates a character device; it does not mediate PCIe
+//     enumeration, so a device already bound to a driver bypasses it. Real DMA containment is
+//     in sov_iommu.c.
+//   * No ECDSA or ML-DSA verification in this file. sov_hmac_sha256 is wired to the kernel's
+//     hmac(sha256). sov_mldsa_wrap.c verifies ML-DSA-87 in kernel space, but this gate does not
+//     call it: that needs a grant format carrying the public key and both signature halves,
+//     which has not been designed.
 //   * No TPM, TDX or SEV attestation. No such hardware here, and no code pretending otherwise.
-//   * No device binding. It gates a character device; it does not mediate PCIe or USB
-//     enumeration, so "quarantined before the driver sees it" is not true here.
 
 #include <linux/cdev.h>
 #include <linux/device.h>

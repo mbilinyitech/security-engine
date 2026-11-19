@@ -142,15 +142,22 @@ These are real constraints, not caveats to be waved away:
   `file_operations`, `copy_from_user`, the state machine, and the kernel's own `hmac(sha256)`.
   It does **not** cover real hardware, concurrency under load, or anything below the chardev.
   `make -C kernel test` runs 14 further tests against the same decision logic without a kernel.
-* **No IOMMU isolation.** The module gates a character device; it does not quarantine a PCIe or
-  USB device before a driver binds it. That needs `iommu_map`/`iommu_unmap` and a device group,
-  which are not here. A device already bound to a driver bypasses the gate entirely.
-* **The module checks HMAC-SHA256, not the hybrid signature.** The bridge signs grants with
-  ECDSA P-384 + ML-DSA-87 and verifies that signature; the module then re-checks the grant with
+* **IOMMU isolation exists, but only for one device, chosen by BDF.** `sov_iommu.ko` puts a PCI
+  device into an empty `iommu_domain` and `vm/run.sh` proves it with real DMA: the device's write
+  lands when a buffer is mapped and is dropped by the IOMMU when it is revoked. What it does not
+  do is mediate PCIe enumeration, so a device that appears later is not contained automatically,
+  and `sovereign_gate.ko` does not go through it. The two modules are independent.
+* **The gate checks HMAC-SHA256, not the hybrid signature.** The bridge signs grants with
+  ECDSA P-384 + ML-DSA-87 and verifies that signature; the gate then re-checks the grant with
   `hmac(sha256)`. `sovereign-bridge kernel-grant` derives that tag from a grant that already
-  passed the hybrid check, so the two layers are sequential rather than equivalent. The gap is
-  real: anyone holding the symmetric root key can forge a grant the kernel accepts, and a
-  post-quantum verifier in kernel space does not exist yet.
+  passed the hybrid check, so the two layers are sequential rather than equivalent. Anyone
+  holding the symmetric root key can still forge a grant the gate accepts.
+* **Kernel-space ML-DSA-87 verification works, but nothing calls it yet.** `sov_mldsa.ko`
+  verifies ML-DSA-87 (FIPS 204) using the vendored pq-crystals reference, and its in-kernel
+  selftest accepts a signature produced by the Rust `ml-dsa` crate and rejects tampered
+  variants. `sovereign_gate.ko` does not invoke it: doing so needs a grant wire format that
+  carries the public key and both signature halves, which has not been designed. There is still
+  no ECDSA P-384 verifier in kernel space, so the hybrid check cannot be completed there.
 * **The tunnel is a transport, not anonymity.** It gives replay protection, bucket padding, and
   cover traffic over plain UDP. It does not do onion routing, and padding hides length, not
   timing. Traffic analysis against a global observer is out of scope.
