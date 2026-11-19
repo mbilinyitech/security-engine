@@ -48,6 +48,29 @@ NOTES:
     * ADMIN is never grantable through this tool. It requires a separate physical path.
 ";
 
+/// Write one line to stdout.
+///
+/// A closed pipe (e.g. `sovereign-bridge ... | head`) is a normal end of output, not a
+/// failure: Rust ignores SIGPIPE, so the write returns `BrokenPipe` instead. Treating that as
+/// success keeps the process from panicking when a caller stops reading early.
+fn emit_line(line: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    match writeln!(lock, "{line}") {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(format!("failed writing to stdout: {e}")),
+    }
+}
+
+/// `emit!(...)` formats and writes a line, propagating non-pipe errors.
+macro_rules! emit {
+    ($($arg:tt)*) => {
+        emit_line(&format!($($arg)*))?
+    };
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -62,11 +85,11 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<(), String> {
     match args {
         [] => {
-            println!("{USAGE}");
+            emit!("{USAGE}");
             Ok(())
         }
         [flag] if flag == "-h" || flag == "--help" || flag == "help" => {
-            println!("{USAGE}");
+            emit!("{USAGE}");
             Ok(())
         }
         [ca, init] if ca == "ca" && init == "init" => ca_init(),
@@ -89,11 +112,11 @@ fn ca_init() -> Result<(), String> {
     let vk = sk.verifying_key();
     let (ecdsa_seed, mldsa_seed) = sk.seeds();
 
-    println!("root-ecdsa-seed={}", hex::encode(ecdsa_seed));
-    println!("root-mldsa-seed={}", hex::encode(mldsa_seed));
-    println!("root-public-key={}", hex::encode(vk.encode()));
-    println!();
-    println!("Keep the seeds offline. Publish only root-public-key.");
+    emit!("root-ecdsa-seed={}", hex::encode(ecdsa_seed));
+    emit!("root-mldsa-seed={}", hex::encode(mldsa_seed));
+    emit!("root-public-key={}", hex::encode(vk.encode()));
+    emit!("");
+    emit!("Keep the seeds offline. Publish only root-public-key.");
     Ok(())
 }
 
@@ -147,9 +170,9 @@ fn ca_certify(root_seed_hex: &str, device_key_hex: &str, rights_spec: &str) -> R
         .sign(labels::CAPABILITY, &cert.signing_payload())
         .map_err(|e| e.to_string())?;
 
-    println!("device-id={}", hex::encode(device_id));
-    println!("device-max-rights=0x{:02x}", max_rights.bits());
-    println!("device-cert={}", hex::encode(encode_cert(&cert)));
+    emit!("device-id={}", hex::encode(device_id));
+    emit!("device-max-rights=0x{:02x}", max_rights.bits());
+    emit!("device-cert={}", hex::encode(encode_cert(&cert)));
     Ok(())
 }
 
@@ -194,9 +217,9 @@ fn enroll(
         signature,
     };
 
-    println!("nonce={nonce_hex}");
-    println!("attestation={}", hex::encode(encode_claim(&claim)));
-    println!(
+    emit!("nonce={nonce_hex}");
+    emit!("attestation={}", hex::encode(encode_claim(&claim)));
+    emit!(
         "requested-rights=0x{:02x} (the host narrows this; ADMIN is never grantable)",
         cert.max_rights.bits()
     );
@@ -262,11 +285,11 @@ fn host(
         .open(&probe, now)
         .map_err(|e| format!("sealed-frame self-test failed: {e}"))?;
 
-    println!("valid=true");
-    println!("device-id={}", hex::encode(grant.token.device_id));
-    println!("granted-rights=0x{:02x}", grant.token.rights.bits());
-    println!("expires-at={}", grant.token.expires_at);
-    println!("grant={}", hex::encode(grant.encode()));
+    emit!("valid=true");
+    emit!("device-id={}", hex::encode(grant.token.device_id));
+    emit!("granted-rights=0x{:02x}", grant.token.rights.bits());
+    emit!("expires-at={}", grant.token.expires_at);
+    emit!("grant={}", hex::encode(grant.encode()));
     Ok(())
 }
 
@@ -280,10 +303,10 @@ fn verify(root_hex: &str, grant_hex: &str, now: &str) -> Result<(), String> {
         .map_err(|_| "unix-now must be a number".to_string())?;
 
     grant.verify(&root, now).map_err(|e| e.to_string())?;
-    println!("valid=true");
-    println!("device-id={}", hex::encode(grant.token.device_id));
-    println!("rights=0x{:02x}", grant.token.rights.bits());
-    println!("expires-at={}", grant.token.expires_at);
+    emit!("valid=true");
+    emit!("device-id={}", hex::encode(grant.token.device_id));
+    emit!("rights=0x{:02x}", grant.token.rights.bits());
+    emit!("expires-at={}", grant.token.expires_at);
     Ok(())
 }
 
