@@ -225,6 +225,22 @@ fn transcript(domain: &[u8], msg: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    /// FIPS 204 ML-DSA-87 and FIPS 186-5 P-384 sizes. If these drift, we are no longer
+    /// producing the algorithm we claim to produce.
+    #[test]
+    fn output_sizes_match_nist_parameters() {
+        let sk = HybridSigningKey::generate().expect("generate");
+        let vk = sk.verifying_key();
+        let sig = sk.sign(b"dom", b"msg").expect("sign");
+
+        assert_eq!(sig.mldsa.len(), sizes::ML_DSA_87_SIG);
+        assert_eq!(sig.ecdsa.len(), sizes::P384_SIG);
+        assert_eq!(vk.mldsa.len(), sizes::ML_DSA_87_VK);
+        assert_eq!(vk.ecdsa.len(), sizes::P384_SEC1);
+        assert_eq!(sig.mldsa.len(), 4627, "ML-DSA-87 signature");
+        assert_eq!(sig.ecdsa.len(), 96, "P-384 signature");
+    }
+
     fn key() -> HybridSigningKey {
         HybridSigningKey::generate().expect("entropy")
     }

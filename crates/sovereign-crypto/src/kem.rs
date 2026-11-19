@@ -205,6 +205,21 @@ fn combine(
 mod tests {
     use super::*;
 
+    /// FIPS 203 ML-KEM-1024 sizes.
+    #[test]
+    fn output_sizes_match_nist_parameters() {
+        let kp = KemKeyPair::generate().expect("generate");
+        let (ct, _) = KemKeyPair::encapsulate_to(kp.public()).expect("encapsulate");
+
+        assert_eq!(ct.mlkem.len(), 1568, "ML-KEM-1024 ciphertext");
+        assert_eq!(ct.eph.len(), 97, "P-384 SEC1 point");
+        assert_eq!(
+            kp.public().mlkem.len(),
+            1568,
+            "ML-KEM-1024 encapsulation key"
+        );
+    }
+
     #[test]
     fn encapsulate_decapsulate_agree() {
         let kp = KemKeyPair::generate().expect("entropy");

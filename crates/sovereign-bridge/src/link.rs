@@ -228,4 +228,43 @@ mod tests {
         let mut link = StreamLink::new(&mut cursor);
         assert_eq!(link.recv().unwrap_err(), IpcError::Io);
     }
+
+    #[test]
+    fn stream_link_works_over_a_real_os_socket() {
+        use std::io::Write as _;
+
+        // A Unix socketpair is a real kernel-backed bidirectional channel, which is what a
+        // character device from the driver provides. This exercises the actual syscall path
+        // rather than an in-memory buffer.
+        let (a, mut peer) = std::os::unix::net::UnixStream::pair().expect("socketpair");
+        let mut link = StreamLink::new(a);
+
+        let sent = [
+            Frame::new(OpCode::Hello, b"handshake".to_vec()).expect("frame"),
+            Frame::new(OpCode::Data, vec![0xAA; 500]).expect("frame"),
+            Frame::new(OpCode::Wipe, Vec::new()).expect("frame"),
+        ];
+        for f in &sent {
+            peer.write_all(&f.encode()).expect("write to socket");
+        }
+
+        for expected in &sent {
+            let got = link.recv().expect("recv over real socket");
+            assert_eq!(got.opcode, expected.opcode);
+            assert_eq!(got.payload, expected.payload);
+        }
+
+        // The other direction must work too, or the kernel could never answer.
+        link.send(&Frame::new(OpCode::Hello, b"reply".to_vec()).expect("frame"))
+            .expect("send");
+        let mut buf = [0u8; 64];
+        let n = std::io::Read::read(&mut peer, &mut buf).expect("peer read");
+        assert!(n > 0, "peer received nothing");
+
+        drop(peer);
+        assert!(
+            link.recv().is_err(),
+            "EOF must surface as an error, not a hang"
+        );
+    }
 }
