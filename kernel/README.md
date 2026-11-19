@@ -93,15 +93,62 @@ That second build is why this is not a pile of unverified code. `make test` chec
 A separate Rust test (`crates/sovereign-ipc/tests/kernel_layout.rs`) asserts the same offsets
 against the real encoder, so the two cannot drift apart without a red test.
 
+## Hybrid grant verification (v2)
+
+The gate accepts two grant formats, told apart by length alone:
+
+| | bytes | authentication |
+|---|---|---|
+| v1 | 109 | 77-byte token ‖ `hmac-sha256` tag (symmetric) |
+| v2 | 4809 | `"SOVG" \| 2 \| token ‖ u16 len ‖ ECDSA sig ‖ u16 len ‖ ML-DSA sig` |
+
+v1 is kept for compatibility. It is symmetric: the module holds the same key that mints grants,
+so anyone who reads that key out of `/sys/module` can forge one. v2 is asymmetric — the module
+holds only the two public keys, so a module compromise cannot mint a grant.
+
+v2 verification runs entirely in kernel space, in this order:
+
+1. `sov_v2_split` checks magic, version, and both declared lengths. No crypto, no parsing for
+   meaning — just enough to prove the buffer is well formed before anything reads it.
+2. `sov_hybrid_verify` builds a domain-separated transcript
+   `SOV_SIGN_LABEL ‖ be32(len) ‖ domain ‖ be32(len) ‖ msg` and requires **both**
+   `sov_ecdsa384_verify` (P-384, SHA-384) **and** `sov_mldsa87_verify` to accept. It is an AND,
+   never an OR: a break in either algorithm alone is not enough to forge a grant.
+3. Only then is the token handed to `sov_check_token` for the rights and expiry checks.
+
+The verifying keys are provisioned at load time through `module_param_cb`, not `charp` — a
+`charp` parameter is capped at 1024 characters and the ML-DSA-87 key alone is 5184 hex
+characters. They are parsed straight into fixed-size buffers, and the parameters are declared
+with permission `0` so they never appear in `/sys/module`.
+
+### Evidence
+
+`./kernel/vm/run.sh` asserts 21 behaviours, including:
+
+* `sov_ecdsa` selftest, 6/6: valid accepted; tampered signature, tampered message, wrong public
+  key, short signature and NULL arguments all refused;
+* `sov_hybrid` selftest, 9/9: adds foreign ECDSA, foreign ML-DSA, cross-paired halves and
+  different-domain;
+* end to end: a grant minted by `sovereign-bridge kernel-grant-v2` is **accepted**, and the same
+  grant with one flipped byte in the ML-DSA half is **refused**.
+
+Two mutations were tried against the integration, and both were caught:
+
+* making `sov_verify_v2` return `SOV_OK` unconditionally → the tampered-grant check fails, which
+  is what proves that check is doing work;
+* skipping the ML-DSA half inside `sov_hybrid_verify` → three checks fail (hybrid selftest,
+  cross-paired halves, and the end-to-end pair).
+
 ## What is still missing
 
-* **The gate still checks HMAC-SHA256, not the hybrid signature.** `sov_mldsa.ko` can verify
-  ML-DSA-87, but `sovereign_gate.ko` does not call it yet. Wiring them together needs a grant
-  format that carries the public key and both signature halves, which is a wire-format change
-  and has not been done. Until then, "the kernel verifies post-quantum signatures" is true of
-  `sov_mldsa.ko` and false of the gate.
-* **No ECDSA P-384 verifier in kernel space.** The classical half of the hybrid signature is
-  still unverified by the kernel.
+* **Key provisioning is the weak point.** The verifying keys arrive as module parameters. A
+  `module_param_cb` keeps them out of `/sys/module`, but they are still in the `insmod` command
+  line and the kernel log. Production should compile them in, or read them from TPM NV against a
+  measurement. What is already true, and is the important part, is that the *attacker* cannot
+  supply them at grant time.
+* **v1 is still accepted by default.** A deployment that wants hybrid-only grants should refuse
+  the 109-byte format outright; that is a one-line change in `sov_write`, deliberately not made
+  here so existing v1 tests keep working.
 * **`sov_iommu.ko` contains one device, by BDF.** It does not mediate PCIe enumeration, so a
   device that appears later is not automatically contained. It also does not stop a driver from
   being bound after the module attaches; it relies on nothing else claiming the device.
@@ -113,9 +160,9 @@ against the real encoder, so the two cannot drift apart without a red test.
 ## Building and testing
 
 ```
-make -C kernel            # the three modules, needs kernel headers
+make -C kernel            # all modules, needs kernel headers
 make -C kernel test       # gate core logic, needs only a C compiler
-./kernel/vm/run.sh        # boots a VM, loads all three modules, asserts 12 behaviours
+./kernel/vm/run.sh        # boots a VM, loads every module, asserts 21 behaviours
 ```
 
 `vm/run.sh` needs `qemu-system-x86_64`, a static `gcc`, and the kernel image it names at the top

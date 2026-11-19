@@ -37,6 +37,20 @@ typedef u64 uint64_t;
 #define SOV_TAG_LEN 32u
 #define SOV_WIRE_LEN (SOV_TOKEN_LEN + SOV_TAG_LEN)
 
+/* v2 grant: hybrid ECDSA P-384 + ML-DSA-87 over the token, verified in kernel space.
+ * Layout: "SOVG" | version=2 | token(77) | u16_be(len) | ecdsa | u16_be(len) | mldsa.
+ * The verifying keys are NOT in the blob: an attacker would otherwise supply their own. */
+#define SOV_V2_MAGIC0 'S'
+#define SOV_V2_MAGIC1 'O'
+#define SOV_V2_MAGIC2 'V'
+#define SOV_V2_MAGIC3 'G'
+#define SOV_V2_VERSION 2u
+#define SOV_V2_HDR_LEN 5u
+#define SOV_V2_ECDSA_SIG_LEN 96u
+#define SOV_V2_MLDSA_SIG_LEN 4627u
+#define SOV_V2_LEN (SOV_V2_HDR_LEN + SOV_TOKEN_LEN + 2u + SOV_V2_ECDSA_SIG_LEN + 2u + \
+                    SOV_V2_MLDSA_SIG_LEN)
+
 /* Offset of each field, so the parser does not hard-code magic numbers in two places. */
 #define SOV_OFF_VERSION 0u
 #define SOV_OFF_DEVICE_ID 1u
@@ -60,6 +74,7 @@ enum sov_result {
 	SOV_E_TIME = -4,
 	SOV_E_TAG = -5,
 	SOV_E_STATE = -6,
+SOV_E_FORMAT = -7,
 };
 
 struct sov_token {
@@ -136,11 +151,15 @@ int sov_hmac_sha256(const uint8_t *key, size_t key_len,
  *
  * Order matters: cheap structural checks, then time, then the MAC. Verifying the MAC first would
  * let an attacker make us do HMAC work for tokens that are obviously expired or malformed. */
-static inline int sov_validate(const uint8_t *wire, size_t len, uint64_t now,
-			       const uint8_t *root_key, const uint8_t *tag)
+/* Structural and semantic checks on a token, with no authentication.
+ *
+ * Split out because a v2 grant is authenticated by a signature that has already been verified
+ * before this runs. Re-MACing it would be meaningless: the module holds no v1 root key on that
+ * path, and pretending to check a tag it cannot compute would be worse than not checking.
+ * Callers on the v1 path must still go through sov_validate(), which adds the MAC. */
+static inline int sov_check_token(const uint8_t *wire, size_t len, uint64_t now)
 {
 	struct sov_token t;
-	uint8_t expected[SOV_TAG_LEN];
 	int rc;
 
 	rc = sov_parse_token(wire, len, &t);
@@ -156,17 +175,73 @@ static inline int sov_validate(const uint8_t *wire, size_t len, uint64_t now,
 		return SOV_E_TIME;
 	}
 
+	sov_memzero(&t, sizeof(t));
+	return SOV_OK;
+}
+
+static inline int sov_validate(const uint8_t *wire, size_t len, uint64_t now,
+                               const uint8_t *root_key, const uint8_t *tag)
+{
+	uint8_t expected[SOV_TAG_LEN];
+	int rc;
+
+	rc = sov_check_token(wire, len, now);
+	if (rc != SOV_OK)
+		return rc;
+
 	rc = sov_hmac_sha256(root_key, 32, wire, SOV_TOKEN_LEN, expected);
 	if (rc != 0) {
 		sov_memzero(expected, sizeof(expected));
-		sov_memzero(&t, sizeof(t));
 		return SOV_E_TAG;
 	}
 
 	rc = sov_ct_equal(expected, tag, SOV_TAG_LEN) ? SOV_OK : SOV_E_TAG;
 	sov_memzero(expected, sizeof(expected));
-	sov_memzero(&t, sizeof(t));
 	return rc;
+}
+
+/* Split a v2 grant into its token and two signature halves, checking every length.
+ *
+ * This does *no* cryptography: it only proves the blob is well-formed, so the caller can then
+ * hand the token to the hybrid verifier without risking an out-of-bounds read. Parsing before
+ * verifying, and verifying the exact bytes that were parsed, is what stops a blob from being
+ * interpreted two different ways.
+ *
+ * On success the out-parameters point *into* `wire`; nothing is copied. Returns SOV_OK or
+ * SOV_E_FORMAT. */
+static inline int sov_v2_split(const uint8_t *wire, size_t len, const uint8_t **token,
+                               const uint8_t **ecdsa_sig, const uint8_t **mldsa_sig)
+{
+        size_t off;
+
+        if (!wire || !token || !ecdsa_sig || !mldsa_sig)
+                return SOV_E_FORMAT;
+        if (len != SOV_V2_LEN)
+                return SOV_E_FORMAT;
+        if (wire[0] != SOV_V2_MAGIC0 || wire[1] != SOV_V2_MAGIC1 ||
+            wire[2] != SOV_V2_MAGIC2 || wire[3] != SOV_V2_MAGIC3)
+                return SOV_E_FORMAT;
+        if (wire[4] != SOV_V2_VERSION)
+                return SOV_E_FORMAT;
+
+        off = SOV_V2_HDR_LEN;
+        *token = wire + off;
+        off += SOV_TOKEN_LEN;
+
+        /* Declared lengths must match the fixed sizes exactly. Accepting a shorter signature
+         * would mean the kernel and the signer disagree about what was signed. */
+        if (((size_t)wire[off] << 8 | wire[off + 1]) != SOV_V2_ECDSA_SIG_LEN)
+                return SOV_E_FORMAT;
+        off += 2;
+        *ecdsa_sig = wire + off;
+        off += SOV_V2_ECDSA_SIG_LEN;
+
+        if (((size_t)wire[off] << 8 | wire[off + 1]) != SOV_V2_MLDSA_SIG_LEN)
+                return SOV_E_FORMAT;
+        off += 2;
+        *mldsa_sig = wire + off;
+
+        return SOV_OK;
 }
 
 /* The state machine a file descriptor follows. Only Quarantined -> Active is allowed, and only

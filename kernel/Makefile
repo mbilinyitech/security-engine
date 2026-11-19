@@ -9,6 +9,8 @@
 # is also executed without a kernel by `make test`.
 
 obj-m := sovereign_gate.o sov_iommu.o sov_mldsa.o
+obj-m += sov_ecdsa.o sov_hybrid.o
+ccflags-y += -DSOV_HYBRID_SELFTEST -DSOV_ECDSA_SELFTEST
 
 # The vendored pq-crystals reference is built into sov_mldsa.o, pinned to ML-DSA-87
 # (Dilithium5 parameters). ccflags are per-directory, so they cannot leak to other modules.

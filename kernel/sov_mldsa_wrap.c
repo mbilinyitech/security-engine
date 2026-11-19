@@ -236,6 +236,9 @@ pr_info("sov_mldsa: unloaded\n");
 module_init(sov_mldsa_init);
 module_exit(sov_mldsa_exit);
 
+/* Consumed by sov_hybrid.ko. GPL-only, same reasoning as sov_ecdsa.c. */
+EXPORT_SYMBOL_GPL(sov_mldsa87_verify);
+
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("ML-DSA-87 signature verification for Sovereign capability grants");
 MODULE_AUTHOR("Sovereign");

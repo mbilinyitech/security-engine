@@ -211,7 +211,7 @@ impl HybridVerifyingKey {
 }
 
 /// Build the signed transcript: domain tag, then each part length-prefixed.
-fn transcript(domain: &[u8], msg: &[u8]) -> Vec<u8> {
+pub(crate) fn transcript(domain: &[u8], msg: &[u8]) -> Vec<u8> {
     let mut t = Vec::with_capacity(labels::SIGN.len() + 8 + domain.len() + msg.len());
     t.extend_from_slice(labels::SIGN);
     t.extend_from_slice(&(domain.len() as u32).to_be_bytes());

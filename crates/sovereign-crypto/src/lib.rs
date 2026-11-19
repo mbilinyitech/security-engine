@@ -29,18 +29,28 @@
 mod aead;
 mod error;
 mod grant_tag;
+mod grant_v2;
 mod kem;
 mod replay;
 mod rng;
+mod seeded_rng;
 mod sign;
+mod tri;
 
 pub use aead::{open, seal, SealingKey};
 pub use error::CryptoError;
 pub use grant_tag::{grant_tag, grant_wire, verify_grant_tag, GrantKey, GRANT_TAG_LEN};
+pub use grant_v2::{
+    grant_v2_decode, grant_v2_encode, grant_v2_encode_parts, GrantV2, GRANT_V2_MAGIC,
+    GRANT_V2_VERSION,
+};
 pub use kem::{HybridCiphertext, KemKeyPair, RecipientPublicKey};
 pub use replay::ReplayWindow;
 pub use rng::fill_random;
 pub use sign::{HybridSignature, HybridSigningKey, HybridVerifyingKey};
+pub use tri::{
+    TriSignature, TriSigningKey, TriVerifyingKey, SLH_SEED_LEN, SLH_SIG_LEN, SLH_VK_LEN,
+};
 
 /// Domain-separation labels. Changing one is a wire-format break, so they are versioned.
 pub mod labels {
@@ -64,6 +74,8 @@ pub mod sizes {
     pub const P384_SEC1: usize = 97;
     /// Fixed-size ECDSA P-384 signature (`r || s`, 48 bytes each).
     pub const P384_SIG: usize = 96;
+    /// Encoded capability token, as parsed by the kernel gate.
+    pub const TOKEN: usize = 77;
     /// ML-KEM-1024 ciphertext.
     pub const ML_KEM_1024_CT: usize = 1568;
     /// ML-KEM-1024 encapsulation key.

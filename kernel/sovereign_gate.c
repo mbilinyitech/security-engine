@@ -35,6 +35,9 @@
 #include <crypto/hash.h>
 
 #include "sov_core.h"
+#include "sov_hybrid.h"
+#include "sov_ecdsa.h"
+#include "sov_mldsa.h"
 
 #define SOV_IOCTL_STATS 0x5301
 #define SOV_IOCTL_REVOKE 0x5302
@@ -88,6 +91,110 @@ static int sov_parse_key(const char *hex)
 		sov_root_key[i] = (u8)((hi << 4) | lo);
 	}
 	return 0;
+}
+
+/* The two verifying keys, provisioned at load time.
+ *
+ * They are *not* taken from the grant. A blob that carried its own public key would let an
+ * attacker sign with their own key and be believed. Provisioning is the honest weak point: a
+ * module parameter is visible in /sys/module, so production should compile the key in or read
+ * it from TPM NV. What matters here is that the attacker cannot influence it at grant time.
+ */
+static u8 sov_ecdsa_pub[SOV_ECDSA384_PUB_LEN];
+static u8 sov_mldsa_vk[SOV_MLDSA87_VK_LEN];
+static bool sov_v2_enabled;
+
+static int sov_parse_hex_exact(const char *hex, u8 *out, size_t out_len)
+{
+        size_t len, i;
+
+        if (!hex)
+                return -EINVAL;
+        len = strlen(hex);
+        if (len != out_len * 2)
+                return -EINVAL;
+        for (i = 0; i < out_len; i++) {
+                u8 hi = sov_hex_val(hex[i * 2]);
+                u8 lo = sov_hex_val(hex[i * 2 + 1]);
+
+                if (hi == 0xFF || lo == 0xFF)
+                        return -EINVAL;
+                out[i] = (u8)((hi << 4) | lo);
+        }
+        return 0;
+}
+
+/* Provisioned through kernel_param_ops rather than charp.
+ *
+ * A charp module parameter is capped at 1024 characters, and the ML-DSA-87 key alone is 5184
+ * hex characters, so insmod fails with "string parameter too long". Parsing straight into the
+ * fixed-size buffer also means the hex never exists as a separate heap string that could
+ * outlive the call. Permission 0 keeps both keys out of /sys/module entirely: a verifying key
+ * is not secret, but there is no reason to publish it either, and no reason for it to be
+ * rewritable at runtime. */
+static bool sov_ecdsa_pub_set;
+static bool sov_mldsa_vk_set;
+
+static int sov_set_ecdsa_pub(const char *val, const struct kernel_param *kp)
+{
+	int rc = sov_parse_hex_exact(val, sov_ecdsa_pub, SOV_ECDSA384_PUB_LEN);
+
+	if (rc)
+		return rc;
+	sov_ecdsa_pub_set = true;
+	return 0;
+}
+
+static int sov_set_mldsa_vk(const char *val, const struct kernel_param *kp)
+{
+	int rc = sov_parse_hex_exact(val, sov_mldsa_vk, SOV_MLDSA87_VK_LEN);
+
+	if (rc)
+		return rc;
+	sov_mldsa_vk_set = true;
+	return 0;
+}
+
+static const struct kernel_param_ops ecdsa_pub_ops = { .set = sov_set_ecdsa_pub };
+static const struct kernel_param_ops mldsa_vk_ops = { .set = sov_set_mldsa_vk };
+
+module_param_cb(ecdsa_pub_hex, &ecdsa_pub_ops, NULL, 0);
+MODULE_PARM_DESC(ecdsa_pub_hex, "Hex SEC1 P-384 public key, 97 bytes (test only)");
+module_param_cb(mldsa_vk_hex, &mldsa_vk_ops, NULL, 0);
+MODULE_PARM_DESC(mldsa_vk_hex, "Hex ML-DSA-87 verifying key, 2592 bytes (test only)");
+
+/* Verify a v2 grant: structure, then both signature halves over the token bytes.
+ *
+ * The token itself is still parsed by sov_validate's caller path afterwards, so the signature
+ * and the semantic checks agree about which bytes are the token: both are given the same
+ * pointer into the same buffer. */
+static int sov_verify_v2(const u8 *wire, size_t len)
+{
+        const u8 *token = NULL;
+        const u8 *ecdsa_sig = NULL;
+        const u8 *mldsa_sig = NULL;
+        size_t tlen;
+        u8 *scratch;
+        int rc;
+
+        rc = sov_v2_split(wire, len, &token, &ecdsa_sig, &mldsa_sig);
+        if (rc != SOV_OK)
+                return rc;
+
+        tlen = sov_hybrid_transcript_len(sizeof("SOVEREIGN/v1/capability") - 1, SOV_TOKEN_LEN);
+        scratch = kmalloc(tlen, GFP_KERNEL);
+        if (!scratch)
+                return -ENOMEM;
+
+        rc = sov_hybrid_verify(sov_ecdsa_pub, sov_mldsa_vk,
+                               (const u8 *)"SOVEREIGN/v1/capability",
+                               sizeof("SOVEREIGN/v1/capability") - 1, token, SOV_TOKEN_LEN,
+                               ecdsa_sig, SOV_V2_ECDSA_SIG_LEN, mldsa_sig, SOV_V2_MLDSA_SIG_LEN,
+                               scratch, tlen);
+        memzero_explicit(scratch, tlen);
+        kfree(scratch);
+
+        return rc == 0 ? SOV_OK : SOV_E_TAG;
 }
 
 /* HMAC-SHA256 via the kernel crypto API, satisfying the contract declared in sov_core.h.
@@ -180,35 +287,62 @@ static ssize_t sov_read(struct file *file, char __user *buf, size_t count, loff_
 	return 0;
 }
 
-/* Writing a 109-byte grant (77-byte token + 32-byte tag) attempts Quarantined -> Active. */
+/* A write attempts Quarantined -> Active.
+ *
+ * Two grant formats are accepted, distinguished by length alone. The lengths differ by
+ * thousands of bytes, so the discrimination is unambiguous:
+ *
+ *   v1, 109 bytes:  77-byte token || 32-byte hmac(sha256) tag. Symmetric: the module holds
+ *                   the same key that mints grants, so a module compromise forges grants.
+ *   v2, 4809 bytes: "SOVG" | 2 | token || u16 len || ECDSA sig || u16 len || ML-DSA sig.
+ *                   Asymmetric: the module holds only public keys and cannot mint a grant.
+ *
+ * In both cases the bytes that were authenticated are the same bytes that are parsed for
+ * meaning. In v2 the signature is checked first, so an unsigned token is never interpreted.
+ */
 static ssize_t sov_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
 	struct sov_file *sf = file->private_data;
+	const u8 *token;
 	u8 *wire;
+	size_t wire_len;
 	int rc;
 
 	if (!sf)
 		return -EINVAL;
-	if (count != SOV_WIRE_LEN)
-		return -EINVAL;
 
-	wire = kzalloc(SOV_WIRE_LEN, GFP_KERNEL);
+	if (count == SOV_WIRE_LEN) {
+		wire_len = SOV_WIRE_LEN;
+	} else if (count == SOV_V2_LEN && sov_v2_enabled) {
+		wire_len = SOV_V2_LEN;
+	} else {
+		return -EINVAL;
+	}
+
+	wire = kzalloc(wire_len, GFP_KERNEL);
 	if (!wire)
 		return -ENOMEM;
 
-	if (copy_from_user(wire, buf, SOV_WIRE_LEN)) {
+	if (copy_from_user(wire, buf, wire_len)) {
 		rc = -EFAULT;
 		goto out;
 	}
 
-	/* sov_validate parses the token itself and MACs the wire bytes, so there is no parsed
-	 * struct here to leak or to accidentally hash. */
-	rc = sov_validate(wire, SOV_TOKEN_LEN, ktime_get_real_seconds(), sov_root_key,
+	if (wire_len == SOV_V2_LEN) {
+		rc = sov_verify_v2(wire, wire_len);
+		if (rc != SOV_OK)
+			goto out;
+		/* sov_v2_split already proved the token sits at this offset. */
+		token = wire + SOV_V2_HDR_LEN;
+		rc = sov_check_token(token, SOV_TOKEN_LEN, ktime_get_real_seconds());
+	} else {
+		rc = sov_validate(wire, SOV_TOKEN_LEN, ktime_get_real_seconds(), sov_root_key,
 			  wire + SOV_TOKEN_LEN);
+	}
 
 	rc = sov_activate(sf, rc);
 out:
-	sov_memzero(wire, SOV_WIRE_LEN);
+	sov_memzero(wire, wire_len);
 	kfree(wire);
 	if (rc != SOV_OK)
 		return rc == -EFAULT ? -EFAULT : -EPERM;
@@ -261,6 +395,19 @@ static int __init sov_init(void)
 		sov_key_set = true;
 	} else {
 		pr_warn("sovereign_gate: no root_key_hex; every grant will be refused\n");
+	}
+
+	/* v2 is opt-in: both verifying keys must be present or the v2 path stays disabled and the
+	 * module behaves exactly as before. Half a key pair is a configuration error, not a reason
+	 * to fall back silently to the weaker v1 path. */
+	if (sov_ecdsa_pub_set && sov_mldsa_vk_set) {
+		sov_v2_enabled = true;
+		pr_info("sovereign_gate: v2 hybrid grants enabled (ECDSA P-384 + ML-DSA-87)\n");
+	} else if (sov_ecdsa_pub_set || sov_mldsa_vk_set) {
+		pr_err("sovereign_gate: ecdsa_pub_hex and mldsa_vk_hex must be given together\n");
+		return -EINVAL;
+	} else {
+		pr_info("sovereign_gate: no v2 verifying keys; only v1 hmac grants accepted\n");
 	}
 
 	ret = alloc_chrdev_region(&sov_devno, 0, 1, "sovereign_gate");

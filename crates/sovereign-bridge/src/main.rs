@@ -41,6 +41,7 @@ USAGE:
         Re-verify an existing grant exactly as the kernel driver would.
 
     sovereign-bridge kernel-grant <grant> <root-key-hex>
+    sovereign-bridge kernel-grant-v2 <grant>
         Emit the 109-byte blob the kernel module accepts on write(): the 77-byte token
         followed by the 32-byte hmac-sha256 tag. Redirect it into /dev/sovereign_gate.
 
@@ -108,6 +109,7 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         [cmd, root, grant, now] if cmd == "verify" => verify(root, grant, now),
         [cmd, grant, key] if cmd == "kernel-grant" => kernel_grant(grant, key),
+        [cmd, grant] if cmd == "kernel-grant-v2" => kernel_grant_v2(grant),
         _ => Err(format!("unrecognised arguments\n\n{USAGE}")),
     }
 }
@@ -325,6 +327,48 @@ fn kernel_grant(grant_hex: &str, key_hex: &str) -> Result<(), String> {
     let blob = sovereign_crypto::grant_wire(&key, &token_wire);
     emit!("{}", hex::encode(&blob));
     emit!("# {} bytes: 77 token + 32 hmac-sha256 tag", blob.len());
+    emit!(
+        "# write with: printf '{}' | xxd -r -p > /dev/sovereign_gate",
+        hex::encode(&blob)
+    );
+    Ok(())
+}
+
+/// Emit the v2 blob: the grant's own hybrid signature over the token, for a kernel that
+/// verifies ECDSA P-384 and ML-DSA-87 itself.
+///
+/// Unlike `kernel-grant`, nothing here is derived from a symmetric key. The signature is the
+/// one the root CA already produced, so the module needs only the matching public keys. A
+/// kernel compromise therefore cannot mint a grant.
+fn kernel_grant_v2(grant_hex: &str) -> Result<(), String> {
+    let grant =
+        CapabilityGrant::decode(&decode_hex(grant_hex, "grant")?).map_err(|e| e.to_string())?;
+
+    let token_wire = grant.token.encode();
+    if token_wire.len() != 77 {
+        return Err(format!(
+            "token encoded to {} bytes, kernel expects 77",
+            token_wire.len()
+        ));
+    }
+
+    // Reuse the grant's existing signature rather than signing again: it is already over
+    // exactly these token bytes under the capability domain, which is what the kernel checks.
+    let blob = sovereign_crypto::grant_v2_encode_parts(&token_wire, &grant.root_signature);
+
+    // Self-check the way the kernel will, so a blob that would be rejected is never emitted.
+    let parsed = sovereign_crypto::grant_v2_decode(&blob).map_err(|e| e.to_string())?;
+    if parsed.token != &token_wire[..] {
+        return Err("round-trip changed the token bytes".to_string());
+    }
+
+    emit!("{}", hex::encode(&blob));
+    emit!(
+        "# {} bytes: 5 header + 77 token + 2 + {} ecdsa + 2 + {} mldsa",
+        blob.len(),
+        sovereign_crypto::sizes::P384_SIG,
+        sovereign_crypto::sizes::ML_DSA_87_SIG
+    );
     emit!(
         "# write with: printf '{}' | xxd -r -p > /dev/sovereign_gate",
         hex::encode(&blob)

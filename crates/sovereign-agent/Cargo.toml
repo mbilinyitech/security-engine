@@ -1,0 +1,11 @@
+[package]
+name = "sovereign-agent"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Capability-gated agentic layer: skills, commands and scripts, each requiring explicit rights."
+
+[dependencies]
+sovereign-ipc = { path = "../sovereign-ipc" }
+sovereign-ledger = { path = "../sovereign-ledger" }

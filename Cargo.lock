@@ -340,7 +340,7 @@ dependencies = [
  "module-lattice",
  "pkcs8",
  "rand_core",
- "sha3",
+ "sha3 0.12.0",
  "shake",
 ]
 
@@ -537,6 +537,16 @@ dependencies = [
 
 [[package]]
 name = "sha3"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be176f1a57ce4e3d31c1a166222d9768de5954f811601fb7ca06fc8203905ce1"
+dependencies = [
+ "digest",
+ "keccak",
+]
+
+[[package]]
+name = "sha3"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc9bad02c26382724b2d2692c6f179285e4b54eeecd7968f52a50059c3c11759"
@@ -568,6 +578,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "slh-dsa"
+version = "0.2.0-rc.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "371c02fe34044d8866ddf7cb0e8204a87ef31a39f0408bed41c4253ea9dd61ed"
+dependencies = [
+ "const-oid",
+ "digest",
+ "hmac",
+ "hybrid-array",
+ "pkcs8",
+ "rand_core",
+ "sha2",
+ "sha3 0.11.0",
+ "signature",
+ "typenum",
+ "zerocopy",
+]
+
+[[package]]
+name = "sovereign-agent"
+version = "0.1.0"
+dependencies = [
+ "sovereign-ipc",
+ "sovereign-ledger",
+]
+
+[[package]]
 name = "sovereign-bridge"
 version = "0.1.0"
 dependencies = [
@@ -588,8 +625,23 @@ dependencies = [
  "ml-dsa",
  "ml-kem",
  "p384",
+ "rand_core",
  "sha2",
+ "slh-dsa",
  "zeroize",
+]
+
+[[package]]
+name = "sovereign-interop"
+version = "0.1.0"
+dependencies = [
+ "sovereign-agent",
+ "sovereign-bridge",
+ "sovereign-crypto",
+ "sovereign-ipc",
+ "sovereign-ledger",
+ "sovereign-swarm",
+ "sovereign-tunnel",
 ]
 
 [[package]]
@@ -597,6 +649,25 @@ name = "sovereign-ipc"
 version = "0.1.0"
 dependencies = [
  "zeroize",
+]
+
+[[package]]
+name = "sovereign-ledger"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+ "sovereign-crypto",
+ "zeroize",
+]
+
+[[package]]
+name = "sovereign-swarm"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+ "sovereign-crypto",
+ "sovereign-ipc",
+ "sovereign-ledger",
 ]
 
 [[package]]
@@ -684,6 +755,26 @@ dependencies = [
  "group",
  "hybrid-array",
  "primefield",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5fe1f8f1b06191a00962174c61aa5005e0bb391a6d80d07e24d115c01a92ed8"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "863ad3ac83293fb4d740aedbfdc9240dd8d1a50c1099acd76ce80ce7c7230c7f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

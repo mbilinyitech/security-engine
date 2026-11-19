@@ -1,0 +1,14 @@
+# Target-specific flags only. The target itself is passed on the command line by `build.sh` and
+# `run.sh`, because `[build] target` would also redirect `cargo test` to bare metal, where the
+# test harness cannot exist.
+
+[target.x86_64-unknown-none]
+# `panic=abort` is required: there is no unwinder. `linker.ld` places the entry at 1 MiB and the
+# boot header in the first 8 KiB, which the boot specification requires.
+rustflags = [
+    "-C", "panic=abort",
+    "-C", "link-arg=-Tlinker.ld",
+    "-C", "link-arg=-no-pie",
+    "-C", "relocation-model=static",
+    "-C", "code-model=kernel",
+]

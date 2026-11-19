@@ -1,0 +1,13 @@
+[package]
+name = "sovereign-swarm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Diverse redundant verification: independent checks that must agree, with disagreement treated as compromise."
+
+[dependencies]
+sovereign-crypto = { path = "../sovereign-crypto" }
+sovereign-ipc = { path = "../sovereign-ipc" }
+sovereign-ledger = { path = "../sovereign-ledger" }
+sha2 = "0.11"

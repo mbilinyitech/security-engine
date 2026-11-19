@@ -1,0 +1,18 @@
+[package]
+name = "sovereign-interop"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "OS-agnostic device protocol plus per-OS transport adapters, so one device can talk to any host."
+
+[dependencies]
+sovereign-ipc = { path = "../sovereign-ipc" }
+
+[dev-dependencies]
+sovereign-crypto = { path = "../sovereign-crypto" }
+sovereign-bridge = { path = "../sovereign-bridge" }
+sovereign-ledger = { path = "../sovereign-ledger" }
+sovereign-swarm = { path = "../sovereign-swarm" }
+sovereign-tunnel = { path = "../sovereign-tunnel" }
+sovereign-agent = { path = "../sovereign-agent" }

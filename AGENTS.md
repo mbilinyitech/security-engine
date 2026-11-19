@@ -9,7 +9,7 @@ Rust 1.88+ (verified on 1.100.0). Toolchain lives at `$HOME/.cargo/bin`; add it 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
 cargo build            # all crates
-cargo test             # 129 tests, all pass
+cargo test             # 227 tests, all pass
 cargo clippy --all-targets   # must stay clean
 cargo fmt --all
 ```
@@ -32,6 +32,29 @@ API gotchas worth remembering:
   trait (`try_generate_from_rng`).
 * `Rights` is a newtype with private field: you cannot write `impl Rights` outside
   `sovereign-ipc` (orphan rule). Test constants go in the test module instead.
+* `slh-dsa` cannot rebuild a keypair from arbitrary raw bytes: `from_seed` is private. Use
+  `SigningKey::new(&mut rng)` with `sovereign_crypto::seeded_rng::SeededRng`, which is an
+  HKDF-derived RNG, so keys are deterministic and reproducible from seeds.
+* `rand_core` must match `slh-dsa`'s version exactly (0.10). A mismatch produces a trait error
+  that does not mention either crate by name.
+* The bare-metal crate cannot live in the workspace: it builds `no_std` for
+  `x86_64-unknown-none` and would break `cargo test`. `kernel-rust/` has its own `[workspace]`.
+* Do **not** put `[build] target = ...` in `kernel-rust/.cargo/config.toml`. It applies to
+  `cargo test` too, which then tries to build the test harness for bare metal. Pass the target
+  on the command line in `build.sh` / `run.sh` instead.
+* `panic = "abort"` belongs in the target rustflags, not the profile, or `cargo test` on the
+  host refuses to build.
+* A `no_std` binary with its own `#[panic_handler]` cannot be `cargo test`ed. Put shared logic in
+  a `no_std` **library** (`kernel-rust/gate-core/`) and depend on it from the binary.
+* QEMU's `-kernel` rejects an ELF64 without a PVH note. Add `.note.Xen` with
+  `XEN_ELFNOTE_PHYS32_ENTRY`, and keep the linker script's `.note.Xen` section.
+* QEMU's `-kernel` with a multiboot1 header present takes the multiboot path and then refuses
+  the 64-bit ELF. Either provide multiboot1 *and* a 32-bit image, or drop multiboot entirely and
+  use PVH. This repo uses PVH.
+* `-nographic` with stdin redirected loses the guest's serial output. Use
+  `-serial file:<path>` in scripts.
+* `eax`/`ebx` are clobbered by the 32-bit boot stage. Save them to statics before touching
+  anything, then load them into `edi`/`esi` for the System V call into Rust.
 
 ## Architecture invariants — do not weaken these
 
@@ -46,6 +69,19 @@ API gotchas worth remembering:
 5. **Parse before allocate.** `sovereign-ipc` validates the declared length against
    `MAX_PAYLOAD` before any `vec![0; n]`. Keep it that way.
 6. **Replay window advances only after authentication succeeds**, so garbage cannot burn counters.
+7. **Tri-hybrid signatures are AND-composed across all three halves** (ECDSA P-384, ML-DSA-87,
+   SLH-DSA-256s). Guarded by the `tri` test module; a mutation removing the SLH verification is
+   caught.
+8. **Swarm gates veto; swarm corroborators must agree.** A single gate rejecting is a plain
+   rejection, never a disagreement. Conflating them makes an expired token look like a
+   compromised verifier, which destroys the value of the alarm.
+9. **The kernel gate refuses before it advances the replay counter.** Check order is state,
+   then validity window, then replay. Reversing the last two lets an attacker burn a legitimate
+   token by replaying it first.
+10. **Device-supplied strings are refused, not sanitised.** A model name containing a newline
+    forges a log line; `sovereign-interop` rejects it rather than stripping it.
+11. **Interop and bridge must grant the same rights for the same request.** Guarded by
+    `the_os_agnostic_handshake_and_the_sovereign_handshake_reach_the_same_verdict`.
 
 ## Where the code is
 
@@ -86,13 +122,15 @@ by deleting one layer thinking the test will catch you.
 `crates/sovereign-tunnel` is a real UDP transport: per-peer replay windows, bucket padding, and
 chaff. It has been exercised over real loopback sockets, not only in memory.
 
-`kernel/` contains three out-of-tree modules. `insmod` returns EPERM in this container (no
+`kernel/` contains six out-of-tree modules. `insmod` returns EPERM in this container (no
 `CAP_SYS_MODULE`), so they are exercised in a QEMU VM instead: `./kernel/vm/run.sh` builds them,
-boots a stock Debian kernel with `intel-iommu` and a QEMU `edu` PCI device, loads all three, and
-asserts 12 behaviours. The gate module is covered by 16 in-kernel checks (device registration,
-`file_operations`, `copy_from_user`, the state machine, `hmac(sha256)`); `sov_iommu.ko` by a real
-DMA test; `sov_mldsa.ko` by 8 ML-DSA-87 checks. Concurrency under load and real hardware remain
-untested.
+boots a stock Debian kernel with `intel-iommu` and a QEMU `edu` PCI device, loads every module,
+and asserts 21 behaviours. The gate module is covered by 16 in-kernel checks (device
+registration, `file_operations`, `copy_from_user`, the state machine, `hmac(sha256)`);
+`sov_iommu.ko` by a real DMA test; `sov_mldsa.ko` by 8 ML-DSA-87 checks; `sov_ecdsa.ko` by 6
+P-384 checks; `sov_hybrid.ko` by 9 AND-composition checks; and the gate itself by two end-to-end
+writes, one accepted and one tampered-and-refused. Concurrency under load and real hardware
+remain untested.
 
 The decision logic lives in `kernel/sov_core.h`, free of kernel APIs, so the same header compiles
 into `test_sov_core.c` — 14 tests via `make -C kernel test`, no kernel needed.
@@ -104,12 +142,28 @@ surfaced when the module ran against a tag produced by CPython. `sov_validate` n
 bytes, and `test_sov_core.c` has an HMAC vector from CPython plus SHA-256 known-answer tests. If
 you change the signature of `sov_validate`, keep the wire-bytes contract.
 
+**Hybrid verification is now real and in the gate.** `sovereign_gate.ko` accepts a 4809-byte v2
+grant (`"SOVG" | 2 | token ‖ len ‖ ECDSA sig ‖ len ‖ ML-DSA sig`) and verifies it with
+`sov_hybrid_verify`, which requires **both** `sov_ecdsa384_verify` and `sov_mldsa87_verify` to
+accept. It is an AND, never an OR. The 109-byte v1 hmac format is still accepted for
+compatibility. It is symmetric: the module holds the same key that mints grants, so anyone who
+reads that key out of the module can forge one. v2 is the path that survives a module compromise.
+
+Two mutations were run against the integration and both were caught: making `sov_verify_v2`
+return `SOV_OK` unconditionally (the tampered-grant end-to-end check fails), and skipping the
+ML-DSA half inside `sov_hybrid_verify` (hybrid selftest, cross-paired halves and both end-to-end
+checks fail). Keep those mutation results in mind when changing either function: if a mutation
+is *not* caught, the test is not testing what its name claims.
+
 Still absent, and must not be described as present:
 
-* **The gate does not call the ML-DSA verifier.** `sov_mldsa.ko` verifies ML-DSA-87 correctly
-  (proven in-kernel), but `sovereign_gate.ko` still accepts grants on `hmac(sha256)` alone.
-  Wiring them needs a grant format carrying the public key and both signature halves.
-* **No ECDSA P-384 verifier in kernel space**, so the hybrid check cannot be completed there.
+* **Key provisioning is the weak point.** The two verifying keys arrive as `module_param_cb`
+  parameters — out of `/sys/module` (permission 0) and parsed straight into fixed buffers, but
+  still present in the `insmod` command line and the kernel log. Production should compile them
+  in or read them from TPM NV. What *is* true is that the attacker cannot supply them at grant
+  time; that is what stops a forged grant.
+* **v1 is accepted by default.** A hybrid-only deployment should refuse the 109-byte format in
+  `sov_write`; not done here so the existing v1 tests keep working.
 * **IOMMU containment covers one device, chosen by BDF.** `sov_iommu.ko` genuinely contains it
   (real DMA lands when mapped, dropped when not), but it does not mediate PCIe enumeration and
   the gate does not route through it.
@@ -171,7 +225,7 @@ added to close that. Worth remembering — a test that only checks a length prov
 cargo test --all              # 129 Rust tests
 cargo clippy --all-targets -- -D warnings
 make -C kernel test           # 14 C tests, runs here
-make -C kernel                # builds sovereign_gate.ko, sov_iommu.ko, sov_mldsa.ko
+make -C kernel                # builds all six modules
 ./kernel/vm/run.sh            # boots QEMU, loads all three, asserts 12 behaviours
 ```
 
@@ -185,6 +239,45 @@ Three implementations must agree on the grant tag: Rust (`sovereign-crypto::gran
 `cargo clippy` runs with `indexing_slicing` denied in the tunnel crate, so slicing in a parser is
 a compile error rather than a code-review question. Fix it with `split_at_checked` / `get`, not
 with an `allow`.
+
+## Bare-metal kernel notes (kernel-rust/)
+
+`kernel-rust/` is a separate, standalone crate. It builds a multiboot/PVH image for
+`x86_64-unknown-none`, enters long mode from a 32-bit stage, and runs the capability gate with
+no OS underneath it. `./kernel-rust/run.sh` boots it in QEMU and asserts 12 serial lines.
+
+**What it proves:** the boot path is ours (32-bit entry, page tables built at run time, GDT,
+long-mode jump) and the gate logic works with no allocator, no scheduler, and no kernel API.
+
+**What it does not prove:** it is not an OS. There is no IDT, so any fault triple-faults and
+reboots. There is no userspace, no driver model, no scheduler. Do not describe it as more.
+
+The gate itself is `kernel-rust/gate-core/` — a `no_std` library so it gets both ordinary unit
+tests (14, on the host) and the boot-time self-check that QEMU asserts (8). Two independent
+paths over one source file.
+
+Mutation verified: deleting the replay check from `main.rs` fails `run.sh` with
+`FAIL missing: gate: replay refused ... ok` and `FAIL missing: gate: 8 passed, 0 failed`.
+
+## Swarm, ledger, agent, interop notes
+
+* `sovereign-swarm` — `Swarm::evaluate` runs gates, any of which may veto. `Swarm::corroborate`
+  runs ≥2 implementations of the same question and reports `Disagreement` on a split. Fewer
+  than two corroborators is `Empty`, not an accept: one implementation cannot corroborate itself.
+* `sovereign-ledger` — hash-chained, checkpoints are hybrid-signed. Tamper detection assumes the
+  verifier trusts a checkpoint from outside the log; an attacker who can replace both can
+  present a shorter history. Say so when describing it.
+* `sovereign-agent` — manifests may only name handlers registered in code. A manifest cannot
+  introduce a program. Rights are checked before the first step runs.
+* `sovereign-interop` — `Transport` has exactly two methods (`send`, `recv`) and a `describe`.
+  Linux is a real file descriptor, tested over a real `UnixStream::pair`. Windows and macOS
+  adapters encode the shape of `DeviceIoControl` / `IOConnectCallStructMethod` without FFI.
+  Do not claim a single driver binary that loads on all three; that does not exist.
+* `crates/sovereign-interop/tests/full_stack.rs` is the integration test: enrol → seal → tunnel
+  → open → audit → swarm → agent, plus a negative path. Mutation verified: removing the rights
+  ceiling intersection in `handshake.rs` makes it fail. Note the first version of the test did
+  *not* catch it, because it requested only rights already inside the ceiling — if a mutation is
+  not caught, check whether the test's input actually exercises the difference.
 
 ## Commit style
 

@@ -1,0 +1,21 @@
+[package]
+name = "sovereign-kernel"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Bare-metal Rust kernel: multiboot2 boot, capability gate, panic=halt."
+
+# Standalone: this crate is deliberately outside the userspace workspace, because it builds for
+# a different target with no std and its own linker script.
+[workspace]
+
+[[bin]]
+name = "sovereign-kernel"
+path = "src/main.rs"
+
+[dependencies]
+sovereign-gate-core = { path = "gate-core" }
+
+[profile.release]
+opt-level = 2
+debug = true

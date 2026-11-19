@@ -1,0 +1,10 @@
+[package]
+name = "sovereign-gate-core"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Allocation-free capability gate, shared by the bare-metal kernel and its host tests."
+
+# `no_std` with no allocator: this must compile for bare metal, so it cannot depend on anything
+# that assumes an operating system underneath it.
+[dependencies]

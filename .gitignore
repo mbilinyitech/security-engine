@@ -18,6 +18,7 @@ kernel/.sovereign_gate.*
 kernel/.cache.mk
 kernel/.*.cmd
 kernel/.*.o
+kernel/.*.o.d
 kernel/..*.cmd
 kernel/.module-common.o
 
@@ -26,3 +27,6 @@ kernel/mldsa/*.o
 kernel/mldsa/test_cross
 kernel/mldsa/.*.cmd
 kernel/.modules.order.cmd
+
+# standalone bare-metal workspace
+kernel-rust/target

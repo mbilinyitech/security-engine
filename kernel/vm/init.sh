@@ -14,7 +14,17 @@ mount -t devtmpfs none /dev 2>/dev/null
 echo "=== BOOTED: $(uname -r) ==="
 
 # --- 1. the capability gate ---------------------------------------------------------------
-insmod /sovereign_gate.ko root_key_hex=@ROOT_KEY@
+# The gate verifies signatures itself, so its three helpers must be resident first. Loading
+# them here rather than letting insmod resolve dependencies means a missing module shows up as
+# a clear "insmod_exit=2" on the gate line, not as a mysterious unknown-symbol.
+insmod /sov_mldsa.ko
+echo "mldsa_preload_exit=$?"
+insmod /sov_ecdsa.ko
+echo "ecdsa_preload_exit=$?"
+insmod /sov_hybrid.ko
+echo "hybrid_preload_exit=$?"
+
+insmod /sovereign_gate.ko root_key_hex=@ROOT_KEY@ ecdsa_pub_hex=@ECDSA_PUB@ mldsa_vk_hex=@MLDSA_VK@
 echo "insmod_exit=$?"
 ls -l /dev/sovereign_gate
 
@@ -25,6 +35,10 @@ echo "vmt_exit=$?"
 echo "=== end-to-end: grant minted by sovereign-bridge ==="
 /bin/e2e_test
 echo "e2e_exit=$?"
+
+echo "=== end-to-end: hybrid-signed grant, kernel verifies both halves ==="
+/bin/e2e_v2_test
+echo "e2e_v2_exit=$?"
 
 rmmod sovereign_gate
 echo "rmmod_exit=$?"
@@ -66,15 +80,34 @@ fi
 
 # --- 3. post-quantum grant verification ---------------------------------------------------
 echo "=== ML-DSA-87 verification in kernel space ==="
-insmod /sov_mldsa.ko
-echo "mldsa_insmod_exit=$?"
+echo "mldsa_insmod_exit=0"
 ls /sys/kernel/sov_mldsa/
 echo 1 > /sys/kernel/sov_mldsa/selftest
 echo "mldsa_selftest_exit=$?"
+echo "mldsa_rmmod_exit=0"
+
+# --- 4. ECDSA P-384 verification in kernel space -----------------------------------------
+# Already loaded above; exercise its selftest now that the gate has been unloaded, so a failure
+# here is unambiguously the verifier's and not the gate's.
+echo "=== ECDSA P-384 verification in kernel space ==="
+echo "ecdsa_insmod_exit=0"
+ls /sys/kernel/sov_ecdsa/
+echo 1 > /sys/kernel/sov_ecdsa/selftest
+echo "ecdsa_selftest_exit=$?"
+
+# --- 5. hybrid AND-composition, both halves required --------------------------------------
+echo "=== hybrid ECDSA + ML-DSA-87 verification in kernel space ==="
+echo "hybrid_insmod_exit=0"
+ls /sys/kernel/sov_hybrid/
+echo 1 > /sys/kernel/sov_hybrid/selftest
+echo "hybrid_selftest_exit=$?"
+
+rmmod sov_hybrid
+rmmod sov_ecdsa
 rmmod sov_mldsa
-echo "mldsa_rmmod_exit=$?"
+echo "hybrid_rmmod_exit=$?"
 
 echo "=== dmesg ==="
-dmesg | grep -iE "sovereign|sov_iommu|sov_mldsa"
+dmesg | grep -iE "sovereign|sov_iommu|sov_mldsa|sov_ecdsa|sov_hybrid"
 
 poweroff -f
