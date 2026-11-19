@@ -30,6 +30,7 @@ mod aead;
 mod error;
 mod grant_tag;
 mod grant_v2;
+mod kdf;
 mod kem;
 mod replay;
 mod rng;
@@ -44,6 +45,7 @@ pub use grant_v2::{
     grant_v2_decode, grant_v2_encode, grant_v2_encode_parts, GrantV2, GRANT_V2_MAGIC,
     GRANT_V2_VERSION,
 };
+pub use kdf::{ratchet, session_key};
 pub use kem::{HybridCiphertext, KemKeyPair, RecipientPublicKey};
 pub use replay::ReplayWindow;
 pub use rng::fill_random;
@@ -62,6 +64,10 @@ pub mod labels {
     pub const CAPABILITY: &[u8] = b"SOVEREIGN/v1/capability";
     /// Prefix for attestation responses.
     pub const ATTESTATION: &[u8] = b"SOVEREIGN/v1/attestation";
+    /// HKDF `info` prefix for the per-session AEAD key.
+    pub const SESSION: &[u8] = b"SOVEREIGN/v1/session-key";
+    /// HKDF `info` prefix for an epoch ratchet step.
+    pub const RATCHET: &[u8] = b"SOVEREIGN/v1/epoch-ratchet";
 }
 
 /// Sizes of the encoded public artefacts, exposed so callers can pre-size buffers.

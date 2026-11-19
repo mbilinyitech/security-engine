@@ -109,7 +109,7 @@ kernel/
 ## Build and test
 
 ```sh
-cargo test              # 227 Rust tests across eight crates
+cargo test              # 239 Rust tests across eight crates
 cargo clippy --all-targets -- -D warnings
 cargo build --release
 make -C kernel test     # 14 C tests for the gate logic
@@ -216,6 +216,14 @@ These are real constraints, not caveats to be waved away:
 * **The tunnel is a transport, not anonymity.** It gives replay protection, bucket padding, and
   cover traffic over plain UDP. It does not do onion routing, and padding hides length, not
   timing. Traffic analysis against a global observer is out of scope.
+* **Forward secrecy covers key compromise, not memory capture.** Each session's AEAD key is
+  derived with HKDF-SHA-384 from the KEM output, the device id, and the handshake nonce, and
+  `Session::rotate` ratchets it forward so the previous key is dropped and zeroized. Frames
+  from an old epoch cannot be opened afterwards. What this does *not* give you: if an attacker
+  reads process memory *before* a rotation, they hold the current key, and they hold it until
+  the next rotation. There is no post-compromise security without a fresh key exchange, and
+  rotations are caller-driven — nothing schedules them yet. A stolen device that never rotates
+  is a stolen key.
 * **Pure-Rust crypto.** The upstream ML-KEM and ML-DSA crates are not constant-time-audited on
   every target and say so. This crate composes them correctly; it does not make them formally
   verified. Independent audit before any production use is not optional.

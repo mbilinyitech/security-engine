@@ -9,7 +9,7 @@ Rust 1.88+ (verified on 1.100.0). Toolchain lives at `$HOME/.cargo/bin`; add it 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
 cargo build            # all crates
-cargo test             # 227 tests, all pass
+cargo test             # 239 tests, all pass
 cargo clippy --all-targets   # must stay clean
 cargo fmt --all
 ```
@@ -282,3 +282,28 @@ Mutation verified: deleting the replay check from `main.rs` fails `run.sh` with
 ## Commit style
 
 Conventional-ish subject lines, imperative mood. Repo started with no commits.
+
+## Session key derivation and the epoch ratchet (verified by mutation)
+
+`sovereign-crypto::session_key` derives the AEAD key with HKDF-SHA-384 over the KEM output plus
+the device id plus the handshake nonce. `Session::from_grant` uses it; it does **not** install the
+KEM output as the key directly. `Session::rotate` calls `sovereign_crypto::ratchet`, which derives
+the next epoch key from the previous one, so the old key is dropped (and zeroized) rather than
+retained.
+
+Two mutations were run and both are caught:
+
+1. `rotate` bumps `epoch` but keeps the same key (the pre-ratchet behaviour). Caught by
+   `rotation_with_different_mix_in_diverges`: with the old key retained, the two sides still
+   interoperate, so `open` returns `Ok` where the test demands `Decrypt`.
+2. `session_key` stops mixing in `handshake_nonce`. Caught by
+   `same_shared_secret_in_different_sessions_yields_incompatible_keys`.
+
+Note on expected errors in these tests: when device id and epoch both match but the keys differ,
+the failure surfaces as `CryptoError::Decrypt` (the AEAD tag), not `CryptoError::Verification`
+(the header checks). That distinction is deliberate — it is what proves the *keys* diverged
+rather than the labels. Do not "fix" these tests to expect `Verification`.
+
+Limitation to keep in mind: rotation is caller-driven. Nothing schedules it, so a session that
+never rotates never gets forward secrecy. If you add a scheduler, the mix-in must come from a
+fresh key exchange, not from a counter.

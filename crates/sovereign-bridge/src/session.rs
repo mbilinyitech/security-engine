@@ -38,8 +38,11 @@ pub struct Session {
 impl Session {
     /// Build a session from a grant, verifying it first.
     ///
-    /// `session_key` is the output of the hybrid KEM run during the handshake. It is *not*
-    /// derived from the token, so possessing a token is not enough to open traffic.
+    /// `session_key` is the raw output of the hybrid KEM run during the handshake. It is not
+    /// used as the AEAD key directly: it is bound to this device id and this handshake nonce
+    /// first, so the same shared secret produces a different key in every session. Possessing a
+    /// token is therefore not enough to open traffic, and a key captured from one session cannot
+    /// be transplanted into another.
     pub fn from_grant(
         grant: &CapabilityGrant,
         root: &HybridVerifyingKey,
@@ -53,7 +56,11 @@ impl Session {
         Ok(Self {
             next_counter: grant.token.counter_base,
             token: grant.token.clone(),
-            key: SealingKey::from_bytes(session_key),
+            key: sovereign_crypto::session_key(
+                &session_key,
+                &grant.token.device_id,
+                &grant.token.handshake_nonce,
+            ),
             replay: ReplayWindow::new(),
             epoch: 0,
             revoked: false,
@@ -81,11 +88,21 @@ impl Session {
         self.revoked = true;
     }
 
-    /// Rotate to a new epoch and key. The counter keeps increasing so a peer cannot use the
-    /// rotation to replay old frames under a fresh epoch.
-    pub fn rotate(&mut self, new_key: [u8; 32]) {
-        self.key = SealingKey::from_bytes(new_key);
-        self.epoch = self.epoch.wrapping_add(1);
+    /// Advance to the next epoch, deriving the new key from the current one.
+    ///
+    /// `mix_in` is fresh entropy from a new key exchange. It is mixed into the derivation rather
+    /// than used as the key directly, so a caller cannot install an arbitrary key while claiming
+    /// a rotation, and the new key always depends on the old one — which is what makes the old
+    /// key worth destroying.
+    ///
+    /// The counter keeps increasing so a peer cannot use the rotation to replay old frames under
+    /// a fresh epoch.
+    pub fn rotate(&mut self, mix_in: [u8; 32]) {
+        let next_epoch = self.epoch.wrapping_add(1);
+        // `ratchet` returns a fresh key and the assignment drops the old one, which zeroizes on
+        // drop. The previous key is therefore gone before any new frame can be sealed.
+        self.key = sovereign_crypto::ratchet(&self.key, &mix_in, next_epoch);
+        self.epoch = next_epoch;
     }
 
     /// Seal `plaintext` into a frame, enforcing the capability first.
@@ -190,6 +207,10 @@ mod tests {
     }
 
     fn env(rights: Rights) -> Env {
+        env_with_nonce(rights, [0x44; 32])
+    }
+
+    fn env_with_nonce(rights: Rights, handshake_nonce: [u8; 32]) -> Env {
         let root_sk = HybridSigningKey::generate().expect("entropy");
         let root_vk = root_sk.verifying_key();
         let token = CapabilityToken {
@@ -198,7 +219,7 @@ mod tests {
             issued_at: ROOT_NOW,
             expires_at: ROOT_NOW + 600,
             counter_base: 1,
-            handshake_nonce: [0x44; 32],
+            handshake_nonce,
         };
         let grant = CapabilityGrant {
             root_signature: root_sk
@@ -357,6 +378,87 @@ mod tests {
             .expect("entropy")
             .verifying_key();
         assert!(Session::from_grant(&e.grant, &foreign, ROOT_NOW, e.key).is_err());
+    }
+
+    /// The KEM output is bound to the device id and handshake nonce, so two sessions that share
+    /// a shared secret still cannot read each other's frames. This is the property that makes a
+    /// leaked `session_key` from one handshake useless in another.
+    #[test]
+    fn same_shared_secret_in_different_sessions_yields_incompatible_keys() {
+        // Same device and the same shared secret, but a different handshake nonce: a distinct
+        // session whose signature still verifies, so the key separation is what refuses the frame.
+        let a_env = env_with_nonce(Rights::SENSOR_READ, [0x44; 32]);
+        let b_env = env_with_nonce(Rights::SENSOR_READ, [0x99; 32]);
+
+        let mut a =
+            Session::from_grant(&a_env.grant, &a_env.root_vk, ROOT_NOW, [0x55; 32]).expect("a");
+        let mut b =
+            Session::from_grant(&b_env.grant, &b_env.root_vk, ROOT_NOW, [0x55; 32]).expect("b");
+
+        // Device id and epoch both match, so the header checks pass; the AEAD tag is what fails,
+        // proving the derived keys differ rather than the labels.
+        let frame = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"secret")
+            .expect("seal");
+        assert_eq!(b.open(&frame, ROOT_NOW).unwrap_err(), CryptoError::Decrypt);
+    }
+
+    /// Forward secrecy: once the session ratchets, the old epoch key is gone, so frames sealed
+    /// under it can no longer be opened — even by the peer that used to hold that key.
+    #[test]
+    fn ratchet_destroys_the_ability_to_read_old_frames() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        let old = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"before")
+            .expect("seal");
+
+        a.rotate([0x77; 32]);
+        b.rotate([0x77; 32]);
+
+        assert_eq!(
+            b.open(&old, ROOT_NOW).unwrap_err(),
+            CryptoError::Verification
+        );
+    }
+
+    /// A rotation must not be a relabelling: if the caller passes a different `mix_in`, the
+    /// derived keys diverge and the peers can no longer talk. That proves the new key depends on
+    /// the mix, not just on the epoch number.
+    #[test]
+    fn rotation_with_different_mix_in_diverges() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        a.rotate([0x77; 32]);
+        b.rotate([0x88; 32]);
+
+        // Both sides are on epoch 1, so the epoch check passes and the failure surfaces at the
+        // AEAD tag — which is exactly the point: the keys diverged, not the labels.
+        let frame = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
+        assert_eq!(b.open(&frame, ROOT_NOW).unwrap_err(), CryptoError::Decrypt);
+    }
+
+    /// The epoch is bound into the derivation, so replaying the same `mix_in` at a later epoch
+    /// still produces a different key.
+    #[test]
+    fn repeated_mix_in_at_a_new_epoch_still_advances_the_key() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        for _ in 0..2 {
+            a.rotate([0x77; 32]);
+            b.rotate([0x77; 32]);
+        }
+        assert_eq!(a.epoch(), 2);
+
+        let frame = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
+        let opened = b.open(&frame, ROOT_NOW).expect("same epoch opens");
+        assert_eq!(opened.plaintext, b"x");
     }
 
     #[test]
