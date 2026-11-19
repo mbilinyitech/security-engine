@@ -1,0 +1,17 @@
+[package]
+name = "sovereign-bridge"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "User-space bridge: plug-in handshake, capability issuance, sealed frames, kernel link."
+
+[dependencies]
+sovereign-ipc = { path = "../sovereign-ipc" }
+sovereign-crypto = { path = "../sovereign-crypto" }
+zeroize = { workspace = true }
+hex = { workspace = true }
+
+[[bin]]
+name = "sovereign-bridge"
+path = "src/main.rs"

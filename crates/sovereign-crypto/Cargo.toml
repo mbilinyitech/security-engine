@@ -1,0 +1,17 @@
+[package]
+name = "sovereign-crypto"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Hybrid post-quantum and classical crypto engine: ML-KEM-1024, ML-DSA-87, ECDSA P-384, XChaCha20-Poly1305."
+
+[dependencies]
+zeroize = { workspace = true }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic", "sha384", "pkcs8", "ecdh", "std"] }
+ml-kem = { version = "0.3", features = ["getrandom"] }
+ml-dsa = "0.1"
+hkdf = "0.13"
+sha2 = "0.11"
+chacha20poly1305 = { version = "0.11", features = ["alloc", "zeroize"] }
+getrandom = { version = "0.4", features = ["std", "sys_rng"] }
