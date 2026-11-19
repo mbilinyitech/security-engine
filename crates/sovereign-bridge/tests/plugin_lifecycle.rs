@@ -343,8 +343,10 @@ fn frames_cannot_be_moved_between_devices() {
     let token_b = hs.issue_capability(T0 + 2, 1).expect("issue");
     let grant_b = ca.mint_grant(token_b);
 
-    // Deliberately give B the *same* symmetric key as A: even then, the capability id bound
-    // into the AEAD associated data keeps the two sessions separate.
+    // Deliberately give B the *same* symmetric key as A. Two independent layers must then keep
+    // the sessions apart: the explicit capability-id check in `Session::open`, and the
+    // capability id bound into the AEAD associated data. Removing only one still fails the
+    // frame, which is why this test only goes red when both are gone.
     let mut session_b =
         Session::from_grant(&grant_b, &ca.verifying, T0 + 3, key_a).expect("session b");
 

@@ -378,11 +378,20 @@ mod tests {
     }
 
     #[test]
-    fn root_key_field_is_not_needed_after_construction() {
-        // Documents intent: the root signing key is only used to mint grants and is not
-        // retained by the session.
+    fn session_keeps_working_after_the_root_key_is_dropped() {
+        // A session must hold only what it needs to seal and open. If it secretly kept the
+        // root signing key, an attacker who compromised the bridge process could mint new
+        // grants from it, so dropping the key here proves the session does not depend on it.
         let e = env(Rights::SENSOR_READ);
-        let _session = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("session");
+        let mut session =
+            Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("session");
         drop(e.root_sk);
+        drop(e.root_vk);
+
+        let frame = session
+            .seal(ROOT_NOW + 1, Rights::SENSOR_READ, b"still works")
+            .expect("seal without root key");
+        let opened = session.open(&frame, ROOT_NOW + 1).expect("open");
+        assert_eq!(opened.plaintext, b"still works");
     }
 }

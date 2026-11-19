@@ -251,6 +251,17 @@ mod tests {
         let vk = sk.verifying_key();
         let sig = sk.sign(b"capability", b"payload").expect("sign");
         vk.verify(b"capability", b"payload", &sig).expect("verify");
+
+        // A signature must not verify under a different domain tag: that separation is what
+        // stops a signature minted for one purpose being reused for another.
+        assert_eq!(
+            vk.verify(b"other", b"payload", &sig).unwrap_err(),
+            CryptoError::Verification
+        );
+        assert_eq!(
+            vk.verify(b"capability", b"payload ", &sig).unwrap_err(),
+            CryptoError::Verification
+        );
     }
 
     #[test]

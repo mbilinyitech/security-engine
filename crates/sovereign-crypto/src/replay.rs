@@ -127,6 +127,10 @@ mod tests {
         for i in 1..=100u64 {
             w.accept(i).expect("in-order");
         }
+        // The whole point of the window: every one of those counters is now burned.
+        for i in 1..=100u64 {
+            assert!(w.accept(i).is_err(), "counter {i} must not replay");
+        }
     }
 
     #[test]
@@ -161,6 +165,8 @@ mod tests {
         w.accept(1 + WINDOW_BITS - 1).expect("advance");
         // Distance from high is WINDOW_BITS - 2, inside the window, and never seen.
         w.accept(2).expect("inside window");
+        // But it can only be used once.
+        assert!(w.accept(2).is_err(), "replay of an in-window counter");
     }
 
     #[test]
