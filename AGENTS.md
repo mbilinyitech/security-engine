@@ -62,6 +62,25 @@ API gotchas worth remembering:
 * `crates/sovereign-bridge/src/main.rs` — CLI. `host` self-checks the grant it mints, including a
   round-trip seal/open probe, before printing it.
 
+## Mutation testing results (verified, do not regress)
+
+Deliberately broke each security-critical path and recorded which tests went red. Re-run these
+if you change the relevant code; a mutation that no test catches means the test is decorative.
+
+| Mutation | Caught by |
+| --- | --- |
+| `HybridVerifyingKey::verify` ignores the ML-DSA half (OR instead of AND) | `both_halves_are_required` |
+| `PLUGIN_RIGHTS_CEILING` intersect removed | `admin_is_never_granted_to_a_plugin`, `a_device_that_asks_only_for_admin_gets_nothing` |
+| Nonce check removed from `MockKernel::accept_grant` | `stolen_token_cannot_be_replayed_into_a_new_session`, `bridge_crash_does_not_leave_a_usable_session` |
+| `capability_id` dropped from AEAD associated data | `sovereign_ipc::sealed_frame_roundtrip` |
+| Both `Session::open` capability check AND AAD binding removed | `frames_cannot_be_moved_between_devices` |
+| Domain tag dropped from the signed transcript | `sign_and_verify_roundtrip`, `wrong_domain_fails` |
+
+Note the two-layer result: removing *either* the explicit capability check or the AAD binding
+alone leaves `frames_cannot_be_moved_between_devices` green, because the other layer still
+rejects the frame. That is intentional defence in depth, not a weak test — but do not "simplify"
+by deleting one layer thinking the test will catch you.
+
 ## Not implemented (do not claim otherwise)
 
 Kernel module, IOMMU isolation, DMA zeroization, remote hardware attestation (TPM/TDX/SEV), and
