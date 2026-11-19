@@ -81,11 +81,64 @@ alone leaves `frames_cannot_be_moved_between_devices` green, because the other l
 rejects the frame. That is intentional defence in depth, not a weak test — but do not "simplify"
 by deleting one layer thinking the test will catch you.
 
-## Not implemented (do not claim otherwise)
+## What exists now, and what still does not
 
-Kernel module, IOMMU isolation, DMA zeroization, remote hardware attestation (TPM/TDX/SEV), and
-the stealth network tunnel. `SealedFrame` is the interface the tunnel will consume. See the
-"Scope and honest limitations" section of README.md.
+`crates/sovereign-tunnel` is a real UDP transport: per-peer replay windows, bucket padding, and
+chaff. It has been exercised over real loopback sockets, not only in memory.
+
+`kernel/` contains an out-of-tree module that **compiles** against 6.8 headers and **has never
+been loaded** — `init_module` returns EPERM here (no `CAP_SYS_MODULE`). Its decision logic lives
+in `kernel/sov_core.h`, deliberately free of kernel APIs so the same file compiles into
+`test_sov_core.c`; `make -C kernel test` runs 11 tests against it on this machine. Device
+registration, `file_operations`, and locking are untested.
+
+Still absent, and must not be described as present:
+
+* IOMMU isolation and DMA containment. The module gates a chardev; a device already bound to a
+  driver bypasses it entirely.
+* Post-quantum verification in the kernel. The module checks `hmac(sha256)`, not the hybrid
+  ECDSA + ML-DSA-87 signature the bridge produces.
+* Remote hardware attestation (TPM 2.0, TDX, SEV). No such devices exist in this container.
+* Onion routing, LoRa mesh, QUIC mimicry. The tunnel is a plain-UDP transport with replay
+  protection and padding; padding hides length, not timing.
+
+## Cross-language invariants
+
+The kernel hard-codes the capability-token layout, so two tests exist purely to stop silent
+drift:
+
+* `kernel/test_sov_core.c` asserts `SOV_TOKEN_LEN == 77` and every field offset.
+* `crates/sovereign-ipc/tests/kernel_layout.rs` asserts the same offsets against the real
+  `CapabilityToken::encode`, and pins that `Rights::SENSOR_READ` shares no bit with `ADMIN`.
+
+Verified by mutation: reordering `rights` after `expires_at` in the encoder turns
+`every_field_sits_at_the_offset_the_kernel_reads` red.
+
+## Tunnel mutation results (verified)
+
+| Mutation | Caught by |
+| --- | --- |
+| Pad-underflow check removed in `Datagram::decode` | `a_corrupt_pad_length_cannot_underflow_the_parser`, `a_truncated_datagram_is_refused_without_panicking` |
+| Per-peer replay `accept` removed in `UdpTransport::recv_frame` | `a_replayed_datagram_is_refused_over_a_real_socket`, `the_replay_window_is_per_peer` |
+| Sender allow-list removed | `a_peer_outside_the_allow_list_is_ignored` |
+| `fill_random` dropped from `chaff_datagram` | `chaff_bodies_differ_between_packets` |
+
+The chaff mutation initially passed: the first version of the tests only checked the packet
+*size*, so predictable cover traffic went unnoticed. `chaff_bodies_differ_between_packets` was
+added to close that. Worth remembering — a test that only checks a length proves very little.
+
+## Build and test
+
+```sh
+cargo test --all              # 120 Rust tests
+cargo clippy --all-targets -- -D warnings
+make -C kernel test           # 11 C tests, runs here
+make -C kernel                # module build only; cannot be loaded here
+```
+
+`cargo clippy` runs with `indexing_slicing` denied in the tunnel crate, so slicing in a parser is
+a compile error rather than a code-review question. Fix it with `split_at_checked` / `get`, not
+with an `allow`.
 
 ## Commit style
 

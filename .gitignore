@@ -4,3 +4,15 @@
 *.key
 *.seed
 .env
+
+# kernel build artefacts
+kernel/*.o
+kernel/*.ko
+kernel/*.mod
+kernel/*.mod.c
+kernel/Module.symvers
+kernel/modules.order
+kernel/test_sov_core
+kernel/.tmp_versions/
+kernel/.sovereign_gate.*
+kernel/.cache.mk

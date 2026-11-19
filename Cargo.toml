@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/sovereign-ipc", "crates/sovereign-crypto", "crates/sovereign-bridge"]
+members = ["crates/sovereign-ipc", "crates/sovereign-crypto", "crates/sovereign-tunnel", "crates/sovereign-bridge"]
 
 [workspace.package]
 edition = "2021"

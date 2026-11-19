@@ -1,6 +1,7 @@
 # Sovereign
 
-Hybrid post-quantum cryptography and a zero-trust plug-in handshake, in three Rust crates.
+Hybrid post-quantum cryptography, a zero-trust plug-in handshake, and a terrestrial transport,
+across four Rust crates and one kernel module.
 
 This is the user-space half of a defence-in-depth design. It covers the parts that can be
 built and tested without a kernel module or a radio: the crypto engine, the wire protocol,
@@ -13,6 +14,8 @@ and the handshake that decides whether a newly attached device may exist in the 
 | `sovereign-crypto` | ML-KEM-1024 + ECDH P-384 KEM, ML-DSA-87 + ECDSA P-384 signatures, HKDF-SHA-384 combiner, XChaCha20-Poly1305 sealing, replay window. |
 | `sovereign-ipc` | Versioned, bounds-checked wire protocol: frames, capability tokens, sealed frames, rights bitflags. |
 | `sovereign-bridge` | Plug-in handshake state machine, capability narrowing, sessions that emit sealed frames, kernel link, operator CLI. |
+| `sovereign-tunnel` | Terrestrial transport for sealed frames: UDP with per-peer replay windows, bucket padding, and cover traffic. |
+| `kernel/` | Out-of-tree module gating a character device behind a capability token. Compiles; never loaded here. |
 
 ## The design rules that matter
 
@@ -57,14 +60,24 @@ crates/sovereign-bridge/src/
   session.rs    capability-bound sealing and opening
   link.rs       StreamLink over Read+Write, MockKernel for tests
   main.rs       CLI: ca init / ca certify / enroll / host / verify
+crates/sovereign-tunnel/src/
+  lib.rs        datagram framing, bucket padding, chaff schedule
+  replay.rs     per-peer anti-replay window
+  transport.rs  real UDP socket, allow-list, replay at the transport
+kernel/
+  sov_core.h      token parsing, validation, state machine (kernel-free, so it is testable)
+  sovereign_gate.c  module glue: chardev, file_operations, hmac(sha256)
+  test_sov_core.c   11 tests that actually run here
 ```
 
 ## Build and test
 
 ```sh
-cargo test              # 89 tests
-cargo clippy --all-targets
+cargo test              # 120 Rust tests
+cargo clippy --all-targets -- -D warnings
 cargo build --release
+make -C kernel test     # 11 C tests for the gate logic
+make -C kernel          # builds the module; it cannot be loaded in this container
 ```
 
 ## Operator flow
@@ -101,13 +114,20 @@ storage instead.
 
 These are real constraints, not caveats to be waved away:
 
-* **No kernel module.** `link.rs` speaks the frame protocol over any `Read + Write`, which on
-  Linux would be a character device from a driver. That driver is not in this repository, so
-  IOMMU isolation, DMA zeroization, and the silicon lock are described in the design but not
-  implemented or tested here.
-* **No network tunnel.** The stealth tunnel (UDP/QUIC mimicry, onion routing, LoRa mesh) is the
-  next crate. `SealedFrame` is the exact interface it consumes: sealed bytes plus a counter and
-  an epoch, with nothing that reveals length or timing to an observer.
+* **The kernel module has never run.** `kernel/` compiles against 6.8 headers, but this
+  container has no `CAP_SYS_MODULE`, so `init_module` returns EPERM. Its decision logic lives in
+  `sov_core.h` and *is* executed — 11 tests via `make -C kernel test` — but device registration,
+  `file_operations`, and locking are untested. Load it on a machine you can reboot before
+  trusting it.
+* **No IOMMU isolation.** The module gates a character device; it does not quarantine a PCIe or
+  USB device before a driver binds it. That needs `iommu_map`/`iommu_unmap` and a device group,
+  which are not here. A device already bound to a driver bypasses the gate entirely.
+* **The module checks HMAC-SHA256, not the hybrid signature.** The bridge signs grants with
+  ECDSA P-384 + ML-DSA-87; the module verifies `hmac(sha256)`. These are not the same thing, and
+  the gap is real: a post-quantum verifier in kernel space does not exist yet.
+* **The tunnel is a transport, not anonymity.** It gives replay protection, bucket padding, and
+  cover traffic over plain UDP. It does not do onion routing, and padding hides length, not
+  timing. Traffic analysis against a global observer is out of scope.
 * **Pure-Rust crypto.** The upstream ML-KEM and ML-DSA crates are not constant-time-audited on
   every target and say so. This crate composes them correctly; it does not make them formally
   verified. Independent audit before any production use is not optional.

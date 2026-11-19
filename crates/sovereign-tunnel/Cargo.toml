@@ -1,0 +1,12 @@
+[package]
+name = "sovereign-tunnel"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Terrestrial transport for sealed frames: UDP datagrams, replay protection, length hiding and chaff."
+
+[dependencies]
+sovereign-crypto = { path = "../sovereign-crypto" }
+sovereign-ipc = { path = "../sovereign-ipc" }
+zeroize = { workspace = true }
