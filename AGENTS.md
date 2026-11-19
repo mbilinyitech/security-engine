@@ -9,7 +9,7 @@ Rust 1.88+ (verified on 1.100.0). Toolchain lives at `$HOME/.cargo/bin`; add it 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
 cargo build            # all crates
-cargo test             # 239 tests, all pass
+cargo test             # 255 tests, all pass
 cargo clippy --all-targets   # must stay clean
 cargo fmt --all
 ```
@@ -307,3 +307,45 @@ rather than the labels. Do not "fix" these tests to expect `Verification`.
 Limitation to keep in mind: rotation is caller-driven. Nothing schedules it, so a session that
 never rotates never gets forward secrecy. If you add a scheduler, the mix-in must come from a
 fresh key exchange, not from a counter.
+
+## Automatic ratchet, rekey, and the epoch window (verified by mutation)
+
+Three distinct operations, and the difference between them is the whole point. Do not merge them.
+
+| Method | Derives from | Gives | Does not give |
+|---|---|---|---|
+| `Session::rotate(mix_in)` | previous key + mix + epoch | forward secrecy | anything against a holder of the current key |
+| `Session::ratchet_epoch()` (private) | previous key + `epoch_mix(epoch)` | same, with no caller input | same |
+| `Session::rekey(shared)` | previous key + **fresh KEM secret** + epoch | post-compromise security | anything without a real exchange |
+
+`with_auto_ratchet(n)` sets `ratchet_after`; `seal` counts frames and calls `ratchet_epoch()` once
+the threshold is hit, *after* building the frame so the frame carries the epoch it was sealed
+under. `open` accepts three cases: same epoch, exactly one epoch behind (`prev_key`), or ahead by
+at most `MAX_EPOCH_SKIP` — walking the chain on a local copy first and committing only after the
+AEAD tag verifies.
+
+**The commit-after-authenticate rule is load-bearing.** Committing the epoch advance before
+`aead_open` returns lets any unauthenticated packet with a large epoch number destroy the keys
+needed for genuine in-flight frames. Mutation-verified: moving the `mem::replace` above the
+`aead_open` call is caught by `a_forged_future_epoch_does_not_advance_the_receiver`.
+
+Four mutations were run against this code, all caught:
+
+1. Commit the epoch advance before authentication — caught by
+   `a_forged_future_epoch_does_not_advance_the_receiver`.
+2. Make `with_auto_ratchet` never fire — caught by three tests, including
+   `a_peer_that_never_ratchets_still_opens_after_auto_ratchet`.
+3. Degrade `rekey` to `ratchet` **using the same mix value** — caught by
+   `a_peer_with_only_the_old_key_cannot_follow_a_rekey`. (The cruder version, passing
+   `[0u8; 32]` as the mix, is only caught by the divergence test and is a weaker mutation; use the
+   semantic one.)
+4. Stop retaining `prev_key` — caught by `a_frame_from_one_epoch_back_still_opens` and
+   `rotation_keeps_one_epoch_of_history_and_no_more`.
+
+Expected-error note: when device id and epoch match but keys differ, the failure is
+`CryptoError::Decrypt`; when the epoch is out of range or too far ahead, it is
+`CryptoError::Verification`. Both are deliberate.
+
+The one-epoch history is a stated trade, not an oversight: it costs one extra epoch of exposure to
+an attacker who reads *receiver* memory, and it buys immunity to reordering. Do not "improve" it to
+zero without also accepting that reordered frames are dropped.

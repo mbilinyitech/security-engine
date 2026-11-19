@@ -109,7 +109,7 @@ kernel/
 ## Build and test
 
 ```sh
-cargo test              # 239 Rust tests across eight crates
+cargo test              # 255 Rust tests across eight crates
 cargo clippy --all-targets -- -D warnings
 cargo build --release
 make -C kernel test     # 14 C tests for the gate logic
@@ -216,14 +216,21 @@ These are real constraints, not caveats to be waved away:
 * **The tunnel is a transport, not anonymity.** It gives replay protection, bucket padding, and
   cover traffic over plain UDP. It does not do onion routing, and padding hides length, not
   timing. Traffic analysis against a global observer is out of scope.
-* **Forward secrecy covers key compromise, not memory capture.** Each session's AEAD key is
-  derived with HKDF-SHA-384 from the KEM output, the device id, and the handshake nonce, and
-  `Session::rotate` ratchets it forward so the previous key is dropped and zeroized. Frames
-  from an old epoch cannot be opened afterwards. What this does *not* give you: if an attacker
-  reads process memory *before* a rotation, they hold the current key, and they hold it until
-  the next rotation. There is no post-compromise security without a fresh key exchange, and
-  rotations are caller-driven — nothing schedules them yet. A stolen device that never rotates
-  is a stolen key.
+* **Forward secrecy is real; post-compromise security needs a rekey, not a ratchet.** The AEAD
+  key is derived with HKDF-SHA-384 from the KEM output, the device id, and the handshake nonce.
+  `Session::with_auto_ratchet(n)` advances the epoch every `n` sealed frames, so a caller cannot
+  forget to rotate, and `open` follows the peer forward by up to `MAX_EPOCH_SKIP` epochs without
+  a caller's help. `Session::rotate` is a *symmetric* step: whoever holds the current key can
+  compute every future one. That gives forward secrecy — old frames become unreadable once the
+  session has moved two epochs past them — and it gives **nothing** against an attacker who
+  already holds the key. Only `Session::rekey`, which mixes in a fresh KEM secret, recovers from
+  that, and it requires an actual exchange. The two are separate methods on purpose.
+* **One epoch of history is retained, deliberately.** `prev_key` keeps the previous epoch's key
+  so a frame reordered across a rotation still opens; it is dropped when the session advances
+  again. The cost is precise and worth stating: an attacker who reads receiver memory sees two
+  keys instead of one, so they can decrypt one epoch further back than a pure forward-secret
+  design would allow. A forward attacker gains nothing from it, because the ratchet is one-way.
+  Setting the history to zero would trade this for silent data loss on any reordering.
 * **Pure-Rust crypto.** The upstream ML-KEM and ML-DSA crates are not constant-time-audited on
   every target and say so. This crate composes them correctly; it does not make them formally
   verified. Independent audit before any production use is not optional.

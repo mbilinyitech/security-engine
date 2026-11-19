@@ -27,12 +27,39 @@ pub struct OpenedFrame {
 pub struct Session {
     token: CapabilityToken,
     key: SealingKey,
+    /// Key for the immediately preceding epoch, kept so that a frame reordered across one epoch
+    /// boundary still opens. Dropped as soon as the session moves a second epoch forward.
+    prev_key: Option<SealingKey>,
     /// Next counter to stamp on an outbound frame. Monotonic and never reused.
     next_counter: u64,
     /// Replay protection for inbound frames from the peer.
     replay: ReplayWindow,
     epoch: u32,
+    /// Frames sealed in the current epoch. Only consulted when auto-ratcheting is enabled.
+    frames_in_epoch: u64,
+    /// Ratchet automatically after this many sealed frames. `None` means the caller drives
+    /// rotation by hand.
+    ratchet_after: Option<u64>,
     revoked: bool,
+}
+
+/// How far ahead of its own epoch a session will walk the key chain to open a frame.
+///
+/// The epoch is authenticated as associated data, so a forged frame cannot *commit* an advance
+/// (see `open`), but the chain walk still costs one HKDF per epoch and must be bounded. Eight
+/// epochs is generous for packet loss and far too small to be a CPU lever.
+const MAX_EPOCH_SKIP: u32 = 8;
+
+/// The deterministic mix-in for an epoch.
+///
+/// Both peers derive it from the epoch number alone, so no coordination is needed to stay in
+/// step. It is public on purpose: a symmetric ratchet gets its forward secrecy from the one-way
+/// function, not from this value being secret. Post-compromise security needs [`rekey`] and a
+/// real key exchange.
+fn epoch_mix(epoch: u32) -> [u8; 32] {
+    let mut m = [0u8; 32];
+    m[..4].copy_from_slice(&epoch.to_be_bytes());
+    m
 }
 
 impl Session {
@@ -61,10 +88,27 @@ impl Session {
                 &grant.token.device_id,
                 &grant.token.handshake_nonce,
             ),
+            prev_key: None,
             replay: ReplayWindow::new(),
             epoch: 0,
+            frames_in_epoch: 0,
+            ratchet_after: None,
             revoked: false,
         })
+    }
+
+    /// Ratchet automatically every `frames` sealed frames.
+    ///
+    /// Without this the session only rotates when the caller says so, and a caller that never
+    /// says so gets no forward secrecy at all. Both peers must be configured with the same
+    /// value: the epoch is part of the authenticated header, so a peer that ratchets on a
+    /// different schedule simply falls behind and catches up when it sees the higher epoch.
+    ///
+    /// `frames` is clamped to at least 1. Zero would mean "ratchet on every frame", which is
+    /// legal but pointless — the counter already prevents reuse within an epoch.
+    pub fn with_auto_ratchet(mut self, frames: u64) -> Self {
+        self.ratchet_after = Some(frames.max(1));
+        self
     }
 
     pub fn capability(&self) -> &CapabilityToken {
@@ -99,10 +143,38 @@ impl Session {
     /// a fresh epoch.
     pub fn rotate(&mut self, mix_in: [u8; 32]) {
         let next_epoch = self.epoch.wrapping_add(1);
-        // `ratchet` returns a fresh key and the assignment drops the old one, which zeroizes on
-        // drop. The previous key is therefore gone before any new frame can be sealed.
-        self.key = sovereign_crypto::ratchet(&self.key, &mix_in, next_epoch);
+        // Keep exactly one epoch of history so a frame that was in flight across the boundary
+        // still opens. Keeping more would mean keeping old keys, which is the thing forward
+        // secrecy is supposed to prevent; keeping none would turn ordinary reordering into
+        // data loss.
+        let next = sovereign_crypto::ratchet(&self.key, &mix_in, next_epoch);
+        let old = core::mem::replace(&mut self.key, next);
+        self.prev_key = Some(old);
         self.epoch = next_epoch;
+        self.frames_in_epoch = 0;
+    }
+
+    /// Advance the epoch using the deterministic per-epoch mix-in.
+    ///
+    /// Used by the automatic ratchet. A caller that has a fresh KEM secret should call
+    /// [`Session::rekey`] instead, which additionally recovers from a past key compromise.
+    fn ratchet_epoch(&mut self) {
+        self.rotate(epoch_mix(self.epoch.wrapping_add(1)));
+    }
+
+    /// Advance the epoch by mixing in a fresh shared secret from a new KEM exchange.
+    ///
+    /// Unlike [`Session::rotate`], an attacker who captured the current key cannot compute the
+    /// result, because it depends on a secret they do not have. This is the only operation here
+    /// that recovers after a compromise. The peer must perform the same exchange and pass the
+    /// same secret.
+    pub fn rekey(&mut self, shared: [u8; 32]) {
+        let next_epoch = self.epoch.wrapping_add(1);
+        let next = sovereign_crypto::rekey(&self.key, &shared, next_epoch);
+        let old = core::mem::replace(&mut self.key, next);
+        self.prev_key = Some(old);
+        self.epoch = next_epoch;
+        self.frames_in_epoch = 0;
     }
 
     /// Seal `plaintext` into a frame, enforcing the capability first.
@@ -148,6 +220,14 @@ impl Session {
         let (nonce, ct) = aead_seal(&self.key, &frame.associated_data(), plaintext)?;
         frame.nonce = nonce;
         frame.ciphertext = ct;
+
+        // Ratchet only after the frame is built, so it carries the epoch it was sealed under.
+        self.frames_in_epoch = self.frames_in_epoch.saturating_add(1);
+        if let Some(limit) = self.ratchet_after {
+            if self.frames_in_epoch >= limit {
+                self.ratchet_epoch();
+            }
+        }
         Ok(frame)
     }
 
@@ -162,21 +242,71 @@ impl Session {
         if frame.capability_id != self.token.device_id {
             return Err(CryptoError::Verification);
         }
-        if frame.epoch != self.epoch {
-            return Err(CryptoError::Verification);
+        // Same epoch: the common case.
+        if frame.epoch == self.epoch {
+            let plaintext = aead_open(
+                &self.key,
+                &frame.associated_data(),
+                &frame.nonce,
+                &frame.ciphertext,
+            )?;
+            self.replay.accept(frame.counter)?;
+            return Ok(OpenedFrame {
+                counter: frame.counter,
+                plaintext,
+            });
         }
 
-        let plaintext = aead_open(
-            &self.key,
-            &frame.associated_data(),
-            &frame.nonce,
-            &frame.ciphertext,
-        )?;
-        self.replay.accept(frame.counter)?;
-        Ok(OpenedFrame {
-            counter: frame.counter,
-            plaintext,
-        })
+        // Exactly one epoch behind: the peer ratcheted while this frame was in flight. Only the
+        // immediately previous key is retained, so anything older is refused outright.
+        if frame.epoch.checked_add(1) == Some(self.epoch) {
+            let prev = self.prev_key.as_ref().ok_or(CryptoError::Verification)?;
+            let plaintext = aead_open(
+                prev,
+                &frame.associated_data(),
+                &frame.nonce,
+                &frame.ciphertext,
+            )?;
+            self.replay.accept(frame.counter)?;
+            return Ok(OpenedFrame {
+                counter: frame.counter,
+                plaintext,
+            });
+        }
+
+        // Ahead: the peer ratcheted and we have not caught up. Walk the chain without touching
+        // our state first. Committing before authentication would let anyone who can send a UDP
+        // packet with a large epoch number advance our epoch arbitrarily, destroying the keys we
+        // still need for genuine in-flight frames — a denial of service dressed as progress.
+        if frame.epoch > self.epoch {
+            let skip = frame.epoch - self.epoch;
+            if skip > MAX_EPOCH_SKIP {
+                return Err(CryptoError::Verification);
+            }
+            let mut candidate = self.key.clone();
+            for e in (self.epoch + 1)..=frame.epoch {
+                candidate = sovereign_crypto::ratchet(&candidate, &epoch_mix(e), e);
+            }
+            let plaintext = aead_open(
+                &candidate,
+                &frame.associated_data(),
+                &frame.nonce,
+                &frame.ciphertext,
+            )?;
+
+            // Authenticated, so the sender really is our peer and really did ratchet.
+            let old = core::mem::replace(&mut self.key, candidate);
+            self.prev_key = Some(old);
+            self.epoch = frame.epoch;
+            self.frames_in_epoch = 0;
+            self.replay.accept(frame.counter)?;
+            return Ok(OpenedFrame {
+                counter: frame.counter,
+                plaintext,
+            });
+        }
+
+        Err(CryptoError::Verification)
     }
 }
 
@@ -349,8 +479,13 @@ mod tests {
         );
     }
 
+    /// A rotation keeps exactly one epoch of history, so a frame reordered across the boundary
+    /// still opens while anything older is refused. That is the deliberate trade: one epoch of
+    /// compromise window on the *receiver* in exchange for not losing reordered traffic. A
+    /// forward attacker gains nothing, because the ratchet is one-way and they cannot derive
+    /// the previous key.
     #[test]
-    fn rotation_blocks_old_epoch_frames() {
+    fn rotation_keeps_one_epoch_of_history_and_no_more() {
         let e = env(Rights::SENSOR_READ);
         let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("session");
         let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("session");
@@ -362,8 +497,10 @@ mod tests {
         assert_eq!(a.epoch(), 1);
 
         assert_eq!(
-            b.open(&old, ROOT_NOW).unwrap_err(),
-            CryptoError::Verification
+            b.open(&old, ROOT_NOW)
+                .expect("one epoch back still opens")
+                .plaintext,
+            b"old"
         );
 
         let new = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"new").expect("seal");
@@ -403,10 +540,11 @@ mod tests {
         assert_eq!(b.open(&frame, ROOT_NOW).unwrap_err(), CryptoError::Decrypt);
     }
 
-    /// Forward secrecy: once the session ratchets, the old epoch key is gone, so frames sealed
-    /// under it can no longer be opened — even by the peer that used to hold that key.
+    /// Forward secrecy, stated precisely: the session retains one epoch of history, so a frame
+    /// is readable until the session has moved *two* epochs past it. After that the key is gone
+    /// and the frame is permanently unreadable.
     #[test]
-    fn ratchet_destroys_the_ability_to_read_old_frames() {
+    fn ratchet_destroys_old_frames_once_two_epochs_have_passed() {
         let e = env(Rights::SENSOR_READ);
         let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
         let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
@@ -415,8 +553,10 @@ mod tests {
             .seal(ROOT_NOW, Rights::SENSOR_READ, b"before")
             .expect("seal");
 
-        a.rotate([0x77; 32]);
-        b.rotate([0x77; 32]);
+        for _ in 0..2 {
+            a.rotate([0x77; 32]);
+            b.rotate([0x77; 32]);
+        }
 
         assert_eq!(
             b.open(&old, ROOT_NOW).unwrap_err(),
@@ -459,6 +599,190 @@ mod tests {
         let frame = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
         let opened = b.open(&frame, ROOT_NOW).expect("same epoch opens");
         assert_eq!(opened.plaintext, b"x");
+    }
+
+    // --- automatic ratcheting ---------------------------------------------------------
+
+    #[test]
+    fn auto_ratchet_advances_the_epoch_without_a_caller() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key)
+            .expect("a")
+            .with_auto_ratchet(3);
+
+        for _ in 0..3 {
+            a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
+        }
+        assert_eq!(
+            a.epoch(),
+            1,
+            "three frames should trip a threshold of three"
+        );
+
+        a.seal(ROOT_NOW, Rights::SENSOR_READ, b"y").expect("seal");
+        assert_eq!(a.epoch(), 1, "the fourth frame is still in epoch 1");
+    }
+
+    #[test]
+    fn a_peer_that_never_ratchets_still_opens_after_auto_ratchet() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key)
+            .expect("a")
+            .with_auto_ratchet(2);
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        // `a` ratchets on its own; `b` has no threshold and must follow from the wire.
+        for i in 0..5 {
+            let frame = a
+                .seal(ROOT_NOW, Rights::SENSOR_READ, format!("m{i}").as_bytes())
+                .expect("seal");
+            let opened = b.open(&frame, ROOT_NOW).expect("peer catches up");
+            assert_eq!(opened.plaintext, format!("m{i}").as_bytes());
+        }
+        assert!(b.epoch() >= 1, "the follower advanced too");
+    }
+
+    #[test]
+    fn a_frame_from_one_epoch_back_still_opens() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        let in_flight = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"old").expect("seal");
+        a.rotate([0x77; 32]);
+        b.rotate([0x77; 32]);
+
+        let opened = b.open(&in_flight, ROOT_NOW).expect("reordered frame opens");
+        assert_eq!(opened.plaintext, b"old");
+    }
+
+    #[test]
+    fn a_frame_two_epochs_back_is_refused() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        let stale = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"stale")
+            .expect("seal");
+        for _ in 0..2 {
+            a.rotate([0x77; 32]);
+            b.rotate([0x77; 32]);
+        }
+
+        // Only one epoch of history is kept; older keys are gone on purpose.
+        assert_eq!(
+            b.open(&stale, ROOT_NOW).unwrap_err(),
+            CryptoError::Verification
+        );
+    }
+
+    /// A forged frame claiming a far-future epoch must not move the receiver's state. If it did,
+    /// an unauthenticated packet could destroy the keys needed for real in-flight traffic.
+    #[test]
+    fn a_forged_future_epoch_does_not_advance_the_receiver() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        let mut frame = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"real")
+            .expect("seal");
+        frame.epoch = 5;
+        frame.ciphertext[0] ^= 0xFF;
+
+        assert!(b.open(&frame, ROOT_NOW).is_err());
+        assert_eq!(b.epoch(), 0, "a rejected frame must not commit an advance");
+
+        // The receiver must still work normally afterwards.
+        let good = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"after")
+            .expect("seal");
+        assert_eq!(
+            b.open(&good, ROOT_NOW).expect("still works").plaintext,
+            b"after"
+        );
+    }
+
+    #[test]
+    fn an_epoch_beyond_the_skip_limit_is_refused() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        let mut frame = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
+        frame.epoch = MAX_EPOCH_SKIP + 1;
+
+        assert_eq!(
+            b.open(&frame, ROOT_NOW).unwrap_err(),
+            CryptoError::Verification
+        );
+        assert_eq!(b.epoch(), 0);
+    }
+
+    // --- rekey (post-compromise security) ---------------------------------------------
+
+    #[test]
+    fn rekey_advances_both_peers_and_keeps_them_talking() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        a.rekey([0xAA; 32]);
+        b.rekey([0xAA; 32]);
+        assert_eq!(a.epoch(), 1);
+
+        let frame = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"post")
+            .expect("seal");
+        assert_eq!(b.open(&frame, ROOT_NOW).expect("opens").plaintext, b"post");
+    }
+
+    /// The point of a rekey: a peer holding only the old key cannot follow. Here `b` performs a
+    /// ratchet instead of the rekey, which is exactly what an attacker with the old key could
+    /// compute — and it must fail.
+    #[test]
+    fn a_peer_with_only_the_old_key_cannot_follow_a_rekey() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut attacker = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        a.rekey([0xAA; 32]);
+        // An attacker who captured the pre-rekey key can only ratchet; they lack the new secret.
+        attacker.rotate([0xAA; 32]);
+        assert_eq!(attacker.epoch(), a.epoch());
+
+        let frame = a
+            .seal(ROOT_NOW, Rights::SENSOR_READ, b"secret")
+            .expect("seal");
+        assert_eq!(
+            attacker.open(&frame, ROOT_NOW).unwrap_err(),
+            CryptoError::Decrypt
+        );
+    }
+
+    #[test]
+    fn rekey_with_a_different_secret_diverges() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("a");
+        let mut b = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key).expect("b");
+
+        a.rekey([0xAA; 32]);
+        b.rekey([0xBB; 32]);
+
+        let frame = a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
+        assert_eq!(b.open(&frame, ROOT_NOW).unwrap_err(), CryptoError::Decrypt);
+    }
+
+    #[test]
+    fn auto_ratchet_threshold_of_zero_is_clamped_to_one() {
+        let e = env(Rights::SENSOR_READ);
+        let mut a = Session::from_grant(&e.grant, &e.root_vk, ROOT_NOW, e.key)
+            .expect("a")
+            .with_auto_ratchet(0);
+
+        a.seal(ROOT_NOW, Rights::SENSOR_READ, b"x").expect("seal");
+        assert_eq!(a.epoch(), 1);
     }
 
     #[test]

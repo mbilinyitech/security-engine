@@ -45,7 +45,7 @@ pub use grant_v2::{
     grant_v2_decode, grant_v2_encode, grant_v2_encode_parts, GrantV2, GRANT_V2_MAGIC,
     GRANT_V2_VERSION,
 };
-pub use kdf::{ratchet, session_key};
+pub use kdf::{ratchet, rekey, session_key};
 pub use kem::{HybridCiphertext, KemKeyPair, RecipientPublicKey};
 pub use replay::ReplayWindow;
 pub use rng::fill_random;
@@ -68,6 +68,8 @@ pub mod labels {
     pub const SESSION: &[u8] = b"SOVEREIGN/v1/session-key";
     /// HKDF `info` prefix for an epoch ratchet step.
     pub const RATCHET: &[u8] = b"SOVEREIGN/v1/epoch-ratchet";
+    /// HKDF `info` prefix for a rekey that mixes in a fresh KEM secret.
+    pub const REKEY: &[u8] = b"SOVEREIGN/v1/epoch-rekey";
 }
 
 /// Sizes of the encoded public artefacts, exposed so callers can pre-size buffers.
