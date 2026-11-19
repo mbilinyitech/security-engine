@@ -40,6 +40,10 @@ USAGE:
     sovereign-bridge verify <root-pubkey> <grant> <unix-now>
         Re-verify an existing grant exactly as the kernel driver would.
 
+    sovereign-bridge kernel-grant <grant> <root-key-hex>
+        Emit the 109-byte blob the kernel module accepts on write(): the 77-byte token
+        followed by the 32-byte hmac-sha256 tag. Redirect it into /dev/sovereign_gate.
+
     Seeds are `<ecdsa-seed-hex>:<mldsa-seed-hex>`.
 
 NOTES:
@@ -103,6 +107,7 @@ fn run(args: &[String]) -> Result<(), String> {
             host(root, cert, nonce, claim, session_key, now)
         }
         [cmd, root, grant, now] if cmd == "verify" => verify(root, grant, now),
+        [cmd, grant, key] if cmd == "kernel-grant" => kernel_grant(grant, key),
         _ => Err(format!("unrecognised arguments\n\n{USAGE}")),
     }
 }
@@ -290,6 +295,40 @@ fn host(
     emit!("granted-rights=0x{:02x}", grant.token.rights.bits());
     emit!("expires-at={}", grant.token.expires_at);
     emit!("grant={}", hex::encode(grant.encode()));
+    Ok(())
+}
+
+/// Emit the exact blob the kernel module expects: token wire bytes then the HMAC tag.
+///
+/// This is the seam between the hybrid-signature world (ECDSA + ML-DSA-87) and the kernel,
+/// which can only compute hmac(sha256) today. The grant is still verified as a hybrid
+/// signature first: the tag is derived from a grant that already passed that check, not a
+/// substitute for it.
+fn kernel_grant(grant_hex: &str, key_hex: &str) -> Result<(), String> {
+    let grant =
+        CapabilityGrant::decode(&decode_hex(grant_hex, "grant")?).map_err(|e| e.to_string())?;
+
+    let key_bytes = decode_hex(key_hex, "root key")?;
+    let key: [u8; 32] = key_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "root key must be exactly 32 bytes".to_string())?;
+
+    let token_wire = grant.token.encode();
+    if token_wire.len() != 77 {
+        return Err(format!(
+            "token encoded to {} bytes, kernel expects 77",
+            token_wire.len()
+        ));
+    }
+
+    let blob = sovereign_crypto::grant_wire(&key, &token_wire);
+    emit!("{}", hex::encode(&blob));
+    emit!("# {} bytes: 77 token + 32 hmac-sha256 tag", blob.len());
+    emit!(
+        "# write with: printf '{}' | xxd -r -p > /dev/sovereign_gate",
+        hex::encode(&blob)
+    );
     Ok(())
 }
 

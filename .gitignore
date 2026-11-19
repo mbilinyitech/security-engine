@@ -16,3 +16,7 @@ kernel/test_sov_core
 kernel/.tmp_versions/
 kernel/.sovereign_gate.*
 kernel/.cache.mk
+kernel/.*.cmd
+kernel/.*.o
+kernel/..*.cmd
+kernel/.module-common.o

@@ -86,11 +86,21 @@ by deleting one layer thinking the test will catch you.
 `crates/sovereign-tunnel` is a real UDP transport: per-peer replay windows, bucket padding, and
 chaff. It has been exercised over real loopback sockets, not only in memory.
 
-`kernel/` contains an out-of-tree module that **compiles** against 6.8 headers and **has never
-been loaded** — `init_module` returns EPERM here (no `CAP_SYS_MODULE`). Its decision logic lives
-in `kernel/sov_core.h`, deliberately free of kernel APIs so the same file compiles into
-`test_sov_core.c`; `make -C kernel test` runs 11 tests against it on this machine. Device
-registration, `file_operations`, and locking are untested.
+`kernel/` contains an out-of-tree module. `insmod` returns EPERM in this container (no
+`CAP_SYS_MODULE`), so it is exercised in a QEMU VM instead: `./kernel/vm/run.sh` builds it,
+boots a stock Debian kernel, loads it, runs 16 checks against `/dev/sovereign_gate`, and unloads
+it. That covers device registration, `file_operations`, `copy_from_user`, the state machine, and
+the kernel's own `hmac(sha256)`. Concurrency under load and real hardware remain untested.
+
+The decision logic lives in `kernel/sov_core.h`, free of kernel APIs, so the same header compiles
+into `test_sov_core.c` — 14 tests via `make -C kernel test`, no kernel needed.
+
+**A real bug this found.** `sov_validate` used to MAC `(const uint8_t *)t`, the parsed struct.
+Struct padding and native endianness made that tag agree with nothing outside the module. The C
+tests passed because they hashed the struct too: both sides were consistently wrong. It only
+surfaced when the module ran against a tag produced by CPython. `sov_validate` now takes wire
+bytes, and `test_sov_core.c` has an HMAC vector from CPython plus SHA-256 known-answer tests. If
+you change the signature of `sov_validate`, keep the wire-bytes contract.
 
 Still absent, and must not be described as present:
 
@@ -130,11 +140,19 @@ added to close that. Worth remembering — a test that only checks a length prov
 ## Build and test
 
 ```sh
-cargo test --all              # 120 Rust tests
+cargo test --all              # 128 Rust tests
 cargo clippy --all-targets -- -D warnings
-make -C kernel test           # 11 C tests, runs here
+make -C kernel test           # 14 C tests, runs here
 make -C kernel                # module build only; cannot be loaded here
+./kernel/vm/run.sh            # boots QEMU, loads the module, proves it works
 ```
+
+Three implementations must agree on the grant tag: Rust (`sovereign-crypto::grant_tag`), C
+(`sov_core.h`), and CPython (`kernel/vm/gen.py`). They are pinned to one vector:
+`cb3ee767...`. If you change token layout, all three break together, which is the point.
+
+`sovereign-bridge kernel-grant <grant> <root-key-hex>` produces the 109-byte blob
+`/dev/sovereign_gate` accepts. It refuses to emit anything whose token is not exactly 77 bytes.
 
 `cargo clippy` runs with `indexing_slicing` denied in the tunnel crate, so slicing in a parser is
 a compile error rather than a code-review question. Fix it with `split_at_checked` / `get`, not

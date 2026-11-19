@@ -128,28 +128,44 @@ int sov_hmac_sha256(const uint8_t *key, size_t key_len,
 
 /* Validate a token against a clock reading and a root key.
  *
- * Deliberately checks in this order: cheap structural checks, then time, then the MAC. Verifying
- * the MAC first would let an attacker make us do HMAC work for tokens that are obviously
- * expired or malformed. */
-static inline int sov_validate(const struct sov_token *t, uint64_t now,
+ * The MAC covers the *wire bytes*, never the parsed struct. A struct carries compiler padding
+ * and native-endian fields, so hashing it yields a tag that matches nothing else in the system.
+ * This was a real bug: the first version hashed `(uint8_t *)t` and its tests passed, because the
+ * tests hashed the struct too. Running against a tag from an independent implementation exposed
+ * it. Do not "simplify" this back to a struct hash.
+ *
+ * Order matters: cheap structural checks, then time, then the MAC. Verifying the MAC first would
+ * let an attacker make us do HMAC work for tokens that are obviously expired or malformed. */
+static inline int sov_validate(const uint8_t *wire, size_t len, uint64_t now,
 			       const uint8_t *root_key, const uint8_t *tag)
 {
+	struct sov_token t;
 	uint8_t expected[SOV_TAG_LEN];
 	int rc;
 
-	if (t->rights == 0)
-		return SOV_E_RIGHTS;
-	if (now < t->issued_at || now >= t->expires_at)
-		return SOV_E_TIME;
+	rc = sov_parse_token(wire, len, &t);
+	if (rc != SOV_OK)
+		return rc;
 
-	rc = sov_hmac_sha256(root_key, 32, (const uint8_t *)t, SOV_TOKEN_LEN, expected);
+	if (t.rights == 0) {
+		sov_memzero(&t, sizeof(t));
+		return SOV_E_RIGHTS;
+	}
+	if (now < t.issued_at || now >= t.expires_at) {
+		sov_memzero(&t, sizeof(t));
+		return SOV_E_TIME;
+	}
+
+	rc = sov_hmac_sha256(root_key, 32, wire, SOV_TOKEN_LEN, expected);
 	if (rc != 0) {
 		sov_memzero(expected, sizeof(expected));
+		sov_memzero(&t, sizeof(t));
 		return SOV_E_TAG;
 	}
 
 	rc = sov_ct_equal(expected, tag, SOV_TAG_LEN) ? SOV_OK : SOV_E_TAG;
 	sov_memzero(expected, sizeof(expected));
+	sov_memzero(&t, sizeof(t));
 	return rc;
 }
 

@@ -28,6 +28,7 @@
 
 mod aead;
 mod error;
+mod grant_tag;
 mod kem;
 mod replay;
 mod rng;
@@ -35,6 +36,7 @@ mod sign;
 
 pub use aead::{open, seal, SealingKey};
 pub use error::CryptoError;
+pub use grant_tag::{grant_tag, grant_wire, verify_grant_tag, GrantKey, GRANT_TAG_LEN};
 pub use kem::{HybridCiphertext, KemKeyPair, RecipientPublicKey};
 pub use replay::ReplayWindow;
 pub use rng::fill_random;

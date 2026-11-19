@@ -12,6 +12,7 @@ p384 = { version = "0.14", default-features = false, features = ["ecdsa", "arith
 ml-kem = { version = "0.3", features = ["getrandom"] }
 ml-dsa = "0.1"
 hkdf = "0.13"
+hmac = "0.13"
 sha2 = "0.11"
 chacha20poly1305 = { version = "0.11", features = ["alloc", "zeroize"] }
 getrandom = { version = "0.4", features = ["std", "sys_rng"] }

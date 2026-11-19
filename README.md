@@ -65,9 +65,10 @@ crates/sovereign-tunnel/src/
   replay.rs     per-peer anti-replay window
   transport.rs  real UDP socket, allow-list, replay at the transport
 kernel/
-  sov_core.h      token parsing, validation, state machine (kernel-free, so it is testable)
+  sov_core.h        token parsing, validation, state machine (kernel-free, so it is testable)
   sovereign_gate.c  module glue: chardev, file_operations, hmac(sha256)
-  test_sov_core.c   11 tests that actually run here
+  test_sov_core.c   14 tests that run without a kernel
+  vm/run.sh         boots a real kernel under QEMU and runs 16 checks against the device
 ```
 
 ## Build and test
@@ -76,8 +77,29 @@ kernel/
 cargo test              # 120 Rust tests
 cargo clippy --all-targets -- -D warnings
 cargo build --release
-make -C kernel test     # 11 C tests for the gate logic
+make -C kernel test     # 14 C tests for the gate logic
 make -C kernel          # builds the module; it cannot be loaded in this container
+./kernel/vm/run.sh      # loads it in a real VM and proves it works
+```
+
+`kernel/vm/run.sh` is the one that matters. `insmod` fails here with EPERM (no `CAP_SYS_MODULE`),
+so the only honest way to test the module is to boot a kernel that will load it. The script
+installs nothing you may not have: it needs `qemu-system-x86_64`, a kernel image with matching
+headers, `gcc`, `cpio`, and `busybox`. On Debian:
+
+```sh
+sudo apt-get install -y qemu-system-x86 busybox-static cpio \
+    linux-image-$(uname -r) linux-headers-$(uname -r)
+```
+
+It mints a grant with the real bridge, boots, loads, runs the checks, unloads, and exits non-zero
+if any of that fails. Current output:
+
+```
+  ok   module loaded
+  ok   every gate test passed in-kernel
+  ok   kernel accepted a sovereign-bridge grant
+  ok   module unloaded cleanly
 ```
 
 ## Operator flow
@@ -114,17 +136,21 @@ storage instead.
 
 These are real constraints, not caveats to be waved away:
 
-* **The kernel module has never run.** `kernel/` compiles against 6.8 headers, but this
-  container has no `CAP_SYS_MODULE`, so `init_module` returns EPERM. Its decision logic lives in
-  `sov_core.h` and *is* executed — 11 tests via `make -C kernel test` — but device registration,
-  `file_operations`, and locking are untested. Load it on a machine you can reboot before
-  trusting it.
+* **The kernel module runs in a VM, not on real hardware.** `kernel/vm/run.sh` builds the
+  module, boots a stock Debian kernel under QEMU (TCG, no KVM needed), loads it, runs 16 checks
+  against `/dev/sovereign_gate`, and unloads it. That covers device registration,
+  `file_operations`, `copy_from_user`, the state machine, and the kernel's own `hmac(sha256)`.
+  It does **not** cover real hardware, concurrency under load, or anything below the chardev.
+  `make -C kernel test` runs 14 further tests against the same decision logic without a kernel.
 * **No IOMMU isolation.** The module gates a character device; it does not quarantine a PCIe or
   USB device before a driver binds it. That needs `iommu_map`/`iommu_unmap` and a device group,
   which are not here. A device already bound to a driver bypasses the gate entirely.
 * **The module checks HMAC-SHA256, not the hybrid signature.** The bridge signs grants with
-  ECDSA P-384 + ML-DSA-87; the module verifies `hmac(sha256)`. These are not the same thing, and
-  the gap is real: a post-quantum verifier in kernel space does not exist yet.
+  ECDSA P-384 + ML-DSA-87 and verifies that signature; the module then re-checks the grant with
+  `hmac(sha256)`. `sovereign-bridge kernel-grant` derives that tag from a grant that already
+  passed the hybrid check, so the two layers are sequential rather than equivalent. The gap is
+  real: anyone holding the symmetric root key can forge a grant the kernel accepts, and a
+  post-quantum verifier in kernel space does not exist yet.
 * **The tunnel is a transport, not anonymity.** It gives replay protection, bucket padding, and
   cover traffic over plain UDP. It does not do onion routing, and padding hides length, not
   timing. Traffic analysis against a global observer is out of scope.

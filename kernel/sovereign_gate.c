@@ -182,7 +182,6 @@ static ssize_t sov_read(struct file *file, char __user *buf, size_t count, loff_
 static ssize_t sov_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
 	struct sov_file *sf = file->private_data;
-	struct sov_token tok;
 	u8 *wire;
 	int rc;
 
@@ -200,16 +199,15 @@ static ssize_t sov_write(struct file *file, const char __user *buf, size_t count
 		goto out;
 	}
 
-	rc = sov_parse_token(wire, SOV_TOKEN_LEN, &tok);
-	if (rc == SOV_OK)
-		rc = sov_validate(&tok, ktime_get_real_seconds(), sov_root_key,
-				  wire + SOV_TOKEN_LEN);
+	/* sov_validate parses the token itself and MACs the wire bytes, so there is no parsed
+	 * struct here to leak or to accidentally hash. */
+	rc = sov_validate(wire, SOV_TOKEN_LEN, ktime_get_real_seconds(), sov_root_key,
+			  wire + SOV_TOKEN_LEN);
 
 	rc = sov_activate(sf, rc);
 out:
 	sov_memzero(wire, SOV_WIRE_LEN);
 	kfree(wire);
-	sov_memzero(&tok, sizeof(tok));
 	if (rc != SOV_OK)
 		return rc == -EFAULT ? -EFAULT : -EPERM;
 	return count;
@@ -245,7 +243,7 @@ static const struct file_operations sov_fops = {
 	.read = sov_read,
 	.write = sov_write,
 	.unlocked_ioctl = sov_ioctl,
-	.llseek = no_llseek,
+/* no llseek: no_llseek was removed in 6.12 and llseek defaults to no_llseek there. */
 };
 
 static int __init sov_init(void)
