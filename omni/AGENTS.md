@@ -1,0 +1,57 @@
+# AGENTS.md
+
+## Commands
+- Install: `python3 -m pip install -e .`
+- Test: `python3 -m pytest -q` (483 passed, 1 skipped when IPv6 loopback is absent; no network, no mocks)
+- Bench: `python3 -m omnishield.bench`
+- Rust core: `cargo test --manifest-path organism/Cargo.toml` (76 tests), `cargo build --release --manifest-path organism/Cargo.toml`
+- Rust lint: `cargo clippy --manifest-path organism/Cargo.toml --all-targets`
+- Machine-readable: `omnishield report` (JSON, schema at `schema/report.schema.json`)
+- Product: `omnishield status` and `omnishield doctor` (63 checks) must pass before any commit
+- Analysis: `bash analysis/run.sh --demo` must exit 0 and write `REPORT.md`, `report.html` and the PNG charts
+- High-risk code stays gated: `evolution.apply` and `changeset.apply` need a separate approval key, `synthesis.run_tool` runs only signed tools, `payments` refuses without a gateway, `hypothetical` never returns invented content from `recall()`
+- Answers are extractive: BM25 plus citations, never free generation
+- Telemetry reads numbers about air; it never claims to extract oxygen
+- Speech is a trained keyword spotter and formant synthesis, not general ASR
+- Corpus learning ingests books and dictionaries; it does not understand them
+- Thinking is retrieval plus a negation check, not consciousness
+- Omni is constructed: roots plus suffixes, parsed back, no claim of native fluency
+- The 2-4-1 MLP learns XOR with hand-written backprop, gradient-checked and R-verified
+- The neuron is implemented twice (Rust and Python) and verified by R from CSV
+- Swarm shards a linear model across nodes over f32 tensors, with an online gradient step
+- OmniNet is a local TCP protocol with Ed25519 signatures and nonce replay defence
+- Skills are a validated registry over tested modules, not new capability
+- Path tracing has textures, area light and metal, still not photoreal but not photorealistic: no textures, area lights or BVH yet
+- 3D is CPU only: Rust ray tracer, Python painter fallback; imagery decodes PNG only
+- Worship is words and sound only: never claim faith, worship or spiritual merit
+- Notifications require `"consent": true`; dry run is the default; one per person per day
+- Rendering is CPU only: no GPU, no image library; PNG via zlib, animation via a hand-written GIF89a LZW encoder
+- Office files are OOXML zips written by hand; PDF is written object by object, never through a library
+- Prediction is only reported with its error: `predict_system` measures the next real reading
+- Numeric helpers live in `omnishield/numbers.py`; do not re-define `clamp` or `mean`
+- Knowledge loop: robots.txt is obeyed, private addresses are refused unless allow_private, every read is capped
+- Affect, self and existential models are arithmetic over declared inputs: show the terms, never claim feeling
+- Metaphysical existential entries stay refused; do not relabel them implemented
+- Inspect: every read is capped and every call reports `elapsed_ms`; never invent a value when /proc is absent
+- Stealth: cells are fixed size and sealed; keep the Rust and Python framing vectors identical
+- Federation: every message and beacon is hybrid-signed; devices are pinned on first use and a key change is refused
+- Durable memory: `omnishield memory verify --db <path>` must pass after every mutation
+- Guards: `organism/src/guard.rs` is fail-closed; never add an "allow on error" path
+- Feature ledger: `omnishield features audit` (fails if any `implemented` claim lacks a real file and symbol)
+- Rebuild ledger: `python3 tools/build_catalog.py` after editing `features/source.txt`
+- CLI: `omnishield --help` (installed to `~/.local/bin`; otherwise `python3 -m omnishield.cli`)
+
+## Conventions
+- Python 3.11+, `cryptography` only external dependency.
+- Every signed structure goes through `hybrid.HybridSigner.sign(payload, domain=..., proto_id=..., proto_version=...)`; verification must pass `expected_domain` and `expected_proto` so a signature cannot be replayed across layers.
+- Fail closed: add a rejection path, never a fallback. A verifier must never accept a classical-only signature.
+- Payloads signed by a layer are `canonical_bytes(dict)`; never sign raw JSON text.
+- Key material only through `keystore.KeyStore`; state files go through `keystore.write_private_file` (0600, atomic).
+- Anything attacker-controlled that reaches a config file (SSID, interface, path) must be validated or escaped first.
+- Paths in manifests are NFC-normalised; artifacts must be regular files inside the base directory (no symlinks).
+- Code is executed only from the exact bytes that were hashed (`AllowList.load_module`).
+- Tests use real crypto, real sockets (`socket.socketpair()` / TCP loopback), and subprocess CLI calls; no mocks.
+- Rust code must stay dependency-light (`serde` + `serde_json` only), deterministic (every stochastic algorithm takes a seed), and validated at the boundary (reject NaN, negative costs, oversized inputs).
+- Anything the Rust core exposes must be reachable through the JSON-RPC dispatcher and listed in `rpc::discover()`.
+- Feature status must be earned: `implemented` needs a file::symbol that `omnishield/features.py` can verify, and a test that exercises it. Never mark a feature `implemented` because a design document describes it.
+- Keep `features/source.txt` as the source of truth for the 500 ids; regenerate the JSON instead of editing it by hand.

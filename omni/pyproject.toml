@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnishield"
+version = "2.0.0"
+description = "OmniShield: one fail-closed agent runtime with four transport layers, hybrid post-quantum signatures, a Rust core, audited durable memory and honest hardware binding"
+requires-python = ">=3.11"
+dependencies = ["cryptography>=45"]
+
+[project.scripts]
+omnishield = "omnishield.cli:main"
+ohshield = "omnishield.cli:main"
+
+[tool.setuptools]
+packages = ["omnishield"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

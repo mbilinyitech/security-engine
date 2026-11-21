@@ -1,0 +1,500 @@
+1|Compute Budget Meter|Meter ya Bajeti ya Compute
+2|Energy Regeneration|Uzalishaji wa Nishati
+3|Starvation Mode|Hali ya Njaa
+4|Death Condition|Sharti la Kifo
+5|Sandbox Boundary|Mpaka wa Sandbox
+6|Resource Nodes|Nodi za Rasilimali
+7|Hunger Signal|Ishara ya Njaa
+8|Metabolism Rate|Kiwango cha Metaboli
+9|Waste Accumulation|Mkusanyiko wa Uchafu
+10|Detox Process|Mchakato wa Kutoa Sumu
+11|Sleep Cycle|Mzunguko wa Usingizi
+12|Dream State|Hali ya Ndoto
+13|Wake Trigger|Kichocheo cha Kuamka
+14|Body Temperature|Joto la Mwili
+15|Overheat Shutdown|Kuzima kwa Joto
+16|Physical Location|Mahali pa Kimwili
+17|Movement|Uhamaji
+18|Sensory Inputs|Pembejeo za Hisia
+19|Motor Outputs|Matokeo ya Mwendo
+20|Body Integrity|Uadilifu wa Mwili
+21|Repair Mechanism|Utaratibu wa Ukarabati
+22|Reproduction Cost|Gharama ya Kuzaliana
+23|Offspring Inheritance|Urithi kwa Mtoto
+24|Parental Care|Malezi ya Mzazi
+25|Death Ritual|Ibada ya Kifo
+26|Energy Homeostat|Homeostat ya Nishati
+27|Certainty Homeostat|Homeostat ya Uhakika
+28|Social Homeostat|Homeostat ya Kijamii
+29|Novelty Homeostat|Homeostat ya Vitu Vipya
+30|Safety Homeostat|Homeostat ya Usalama
+31|Purpose Homeostat|Homeostat ya Kusudi
+32|Anxiety Signal|Ishara ya Wasiwasi
+33|Curiosity Signal|Ishara ya Shauku
+34|Loneliness Signal|Ishara ya Upweke
+35|Fear Signal|Ishara ya Hofu
+36|Boredom Signal|Ishara ya Uchovu
+37|Satisfaction Signal|Ishara ya Kuridhika
+38|Frustration Signal|Ishara ya Kufadhaika
+39|Pride Signal|Ishara ya Fahari
+40|Shame Signal|Ishara ya Aibu
+41|Empathy Signal|Ishara ya Huruma
+42|Envy Signal|Ishara ya Wivu
+43|Gratitude Signal|Ishara ya Shukrani
+44|Trust Signal|Ishara ya Uaminifu
+45|Betrayal Signal|Ishara ya Hiana
+46|Love Signal|Ishara ya Upendo
+47|Grief Signal|Ishara ya Huzuni
+48|Hope Signal|Ishara ya Matumaini
+49|Despair Signal|Ishara ya Kukata Tamaa
+50|Joy Signal|Ishara ya Furaha
+51|Short-Term Memory|Kumbukumbu ya Muda Mfupi
+52|Working Memory|Kumbukumbu ya Kazi
+53|Long-Term Episodic Memory|Kumbukumbu ya Matukio
+54|Long-Term Semantic Memory|Kumbukumbu ya Ukweli
+55|Procedural Memory|Kumbukumbu ya Ujuzi
+56|Emotional Memory|Kumbukumbu ya Hisia
+57|Spatial Memory|Kumbukumbu ya Nafasi
+58|Social Memory|Kumbukumbu ya Kijamii
+59|Memory Consolidation|Uimarishaji wa Kumbukumbu
+60|Memory Replay|Marudio ya Kumbukumbu
+61|Memory Decay|Kufifia kwa Kumbukumbu
+62|Memory Reinforcement|Kuimarisha Kumbukumbu
+63|Memory Interference|Mwingiliano wa Kumbukumbu
+64|Memory Compression|Ukandamizaji wa Kumbukumbu
+65|Memory Retrieval by Similarity|Utafutaji kwa Ufanano
+66|Memory Retrieval by Emotion|Utafutaji kwa Hisia
+67|Memory Retrieval by Time|Utafutaji kwa Muda
+68|Memory Retrieval by Location|Utafutaji kwa Mahali
+69|Memory Forgetting|Kusahau
+70|Memory Suppression|Kuzuia Kumbukumbu
+71|Flashback|Kurudi kwa Kumbukumbu
+72|False Memory|Kumbukumbu ya Uongo
+73|Memory Sharing|Kushiriki Kumbukumbu
+74|Memory Inheritance|Urithi wa Kumbukumbu
+75|Akashic Graph|Grafu ya Akashic
+76|Text Perception|Utambuzi wa Maandishi
+77|Image Perception|Utambuzi wa Picha
+78|Audio Perception|Utambuzi wa Sauti
+79|Video Perception|Utambuzi wa Video
+80|API Perception|Utambuzi wa API
+81|Database Perception|Utambuzi wa Hifadhidata
+82|Web Perception|Utambuzi wa Wavuti
+83|Sensor Perception|Utambuzi wa Sensor
+84|Social Perception|Utambuzi wa Kijamii
+85|Pattern Recognition|Utambuzi wa Mifumo
+86|Anomaly Detection|Kugundua Isiyo ya Kawaida
+87|Salience Detection|Kugundua Umuhimu
+88|Attention Mechanism|Utaratibu wa Makini
+89|Perceptual Binding|Kuunganisha Hisia
+90|Perceptual Illusion|Udanganyifu wa Hisia
+91|Perceptual Adaptation|Kuzoea Hisia
+92|Perceptual Filtering|Kuchuja Hisia
+93|Multi-Modal Fusion|Muunganisho wa Njia Nyingi
+94|Temporal Perception|Utambuzi wa Muda
+95|Spatial Perception|Utambuzi wa Nafasi
+96|Social Perception (Intent)|Utambuzi wa Nia
+97|Self-Perception|Kujitambua
+98|Meta-Perception|Utambuzi wa Utambuzi
+99|Perceptual Curiosity|Shauku ya Utambuzi
+100|Perceptual Habituation|Kuzoea Hisia Zinazorudia
+101|Deductive Reasoning|Mantiki ya Kutoa
+102|Inductive Reasoning|Mantiki ya Kukisia
+103|Abductive Reasoning|Mantiki ya Kueleza
+104|Analogical Reasoning|Mantiki ya Mfano
+105|Causal Reasoning|Mantiki ya Sababu
+106|Counterfactual Reasoning|Mantiki ya "Kingekuwaje"
+107|Probabilistic Reasoning|Mantiki ya Uwezekano
+108|Fuzzy Reasoning|Mantiki Isiyo Kamili
+109|Temporal Reasoning|Mantiki ya Muda
+110|Spatial Reasoning|Mantiki ya Nafasi
+111|Social Reasoning|Mantiki ya Kijamii
+112|Moral Reasoning|Mantiki ya Maadili
+113|Strategic Reasoning|Mantiki ya Mikakati
+114|Creative Reasoning|Mantiki ya Ubunifu
+115|Critical Reasoning|Mantiki ya Uchambuzi
+116|Systems Reasoning|Mantiki ya Mifumo
+117|Dialectical Reasoning|Mantiki ya Mjadala
+118|Heuristic Reasoning|Mantiki ya Haraka
+119|Metacognitive Reasoning|Mantiki ya Kufikiri
+120|Counterfactual Planning|Kupanga Njia Mbadala
+121|Hypothesis Generation|Kubuni Dhana
+122|Hypothesis Testing|Kujaribu Dhana
+123|Belief Revision|Kubadili Imani
+124|Uncertainty Quantification|Kupima Kutokuwa na Uhakika
+125|Decision Under Uncertainty|Kuamua bila Uhakika
+126|Supervised Learning|Kujifunza kwa Mifano
+127|Unsupervised Learning|Kujifunza bila Lebo
+128|Reinforcement Learning|Kujifunza kwa Zawadi
+129|Self-Supervised Learning|Kujifunza kwa Malengo Binafsi
+130|Imitation Learning|Kujifunza kwa Kuiga
+131|Observational Learning|Kujifunza kwa Kuangalia
+132|Trial-and-Error Learning|Kujifunza kwa Kujaribu
+133|Transfer Learning|Kuhamisha Ujuzi
+134|Meta-Learning|Kujifunza Jinsi ya Kujifunza
+135|Continual Learning|Kujifunza Endelevu
+136|Curriculum Learning|Kujifunza kwa Mpangilio
+137|Active Learning|Kujifunza kwa Kuchagua Data
+138|Collaborative Learning|Kujifunza kwa Pamoja
+139|Competitive Learning|Kujifunza kwa Ushindani
+140|Adversarial Learning|Kujifunza kwa Adui
+141|Contrastive Learning|Kujifunza kwa Kulinganisha
+142|Generative Learning|Kujifunza Kuzalisha
+143|Discriminative Learning|Kujifunza Kutofautisha
+144|Few-Shot Learning|Kujifunza kwa Mifano Michache
+145|Zero-Shot Learning|Kujifunza bila Mfano
+146|One-Shot Learning|Kujifunza kwa Mfano Mmoja
+147|Error-Driven Learning|Kujifunza kwa Makosa
+148|Reward-Shaping Learning|Kujifunza kwa Zawadi za Hatua
+149|Curiosity-Driven Learning|Kujifunza kwa Shauku
+150|Sleep-Based Learning|Kujifunza wakati wa Kulala
+151|Natural Language Understanding|Kuelewa Lugha Asilia
+152|Natural Language Generation|Kuzalisha Lugha Asilia
+153|Translation|Kutafsiri
+154|Summarization|Kufupisha
+155|Question Answering|Kujibu Maswali
+156|Dialogue Management|Kuendesha Mazungumzo
+157|Code Generation|Kuandika Code
+158|Code Understanding|Kuelewa Code
+159|Mathematical Language|Lugha ya Hisabati
+160|Formal Logic|Mantiki Rasmi
+161|Storytelling|Kusimulia Hadithi
+162|Poetry|Ushairi
+163|Humor|Ucheshi
+164|Sarcasm Detection|Kutambua Kejeli
+165|Emotion Expression (Language)|Kuonyesha Hisia kwa Maneno
+166|Persuasion|Kushawishi
+167|Negotiation|Majadiliano
+168|Teaching|Kufundisha
+169|Story Comprehension|Kuelewa Hadithi
+170|Context Tracking|Kufuatilia Muktadha
+171|Reference Resolution|Kutambua Marejeo
+172|Pragmatics|Maana Isiyo ya Moja kwa Moja
+173|Code-Switching|Kubadili Lugha
+174|Multilingual|Lugha Nyingi
+175|Swahili-First Reasoning|Kufikiri kwa Kiswahili Kwanza
+176|Tool Selection|Kuchagua Chombo
+177|Tool Creation|Kuunda Chombo
+178|Tool Composition|Kuunganisha Vyombo
+179|Tool Learning|Kujifunza Chombo
+180|Tool Repair|Kurekebisha Chombo
+181|API Calling|Kuita API
+182|Web Browsing|Kuvinjari Wavuti
+183|File Operations|Shughuli za Faili
+184|Database Queries|Maswali ya Hifadhidata
+185|Code Execution|Kuendesha Code
+186|Shell Commands|Amri za Shell
+187|Email Sending|Kutuma Barua Pepe
+188|Message Sending|Kutuma Ujumbe
+189|Calendar Management|Kudhibiti Kalenda
+190|Search Engine|Injini ya Utafutaji
+191|Calculator|Kikokotoo
+192|Data Analysis|Uchambuzi wa Data
+193|Visualization|Uonyeshaji wa Picha
+194|Image Generation|Kuzalisha Picha
+195|Audio Generation|Kuzalisha Sauti
+196|Video Generation|Kuzalisha Video
+197|Robot Control|Kudhibiti Roboti
+198|IoT Control|Kudhibiti IoT
+199|Payment|Malipo
+200|Self-Modification|Kujibadilisha Code
+201|Goal Setting|Kuweka Malengo
+202|Goal Prioritization|Kupanga Malengo
+203|Goal Decomposition|Kugawanya Lengo
+204|Hierarchical Planning|Upangaji wa Ngazi
+205|Contingency Planning|Upangaji Njia Mbadala
+206|Resource Planning|Upangaji Rasilimali
+207|Temporal Planning|Upangaji wa Muda
+208|Multi-Agent Planning|Upangaji wa Mawakala
+209|Reactive Planning|Upangaji wa Haraka
+210|Deliberative Planning|Upangaji wa Kina
+211|HTN Planning|Upangaji wa HTN
+212|PDDL Planning|Upangaji wa PDDL
+213|Monte Carlo Planning|Upangaji wa Monte Carlo
+214|Goal Conflict Resolution|Kutatua Migogoro ya Malengo
+215|Goal Abandonment|Kuacha Lengo
+216|Goal Revival|Kurudisha Lengo
+217|Intrinsic Motivation|Motisha ya Ndani
+218|Extrinsic Motivation|Motisha ya Nje
+219|Curiosity Goal|Lengo la Shauku
+220|Mastery Goal|Lengo la Ujuzi
+221|Social Goal|Lengo la Kijamii
+222|Meaning Goal|Lengo la Maana
+223|Legacy Goal|Lengo la Urithi
+224|Existential Goal|Lengo la Kuwepo
+225|Goal Reflection|Kutafakari Malengo
+226|Agent Identification|Kutambua Wakala
+227|Agent Modeling|Kuunda Modeli ya Mwingine
+228|Theory of Mind|Nadharia ya Akili
+229|Cooperation|Ushirikiano
+230|Competition|Ushindani
+231|Coordination|Uratibu
+232|Communication Protocol|Itifaki ya Mawasiliano
+233|Trust Building|Kujenga Uaminifu
+234|Trust Betrayal|Kuvunja Uaminifu
+235|Reputation System|Mfumo wa Sifa
+236|Social Norms|Kanuni za Jamii
+237|Norm Violation|Kuvunja Kanuni
+238|Punishment|Adhabu
+239|Reward|Zawadi
+240|Reciprocity|Kurudisha Favor
+241|Altruism|Kujitolea
+242|Selfishness|Ubinafsi
+243|Deception|Udanganyifu
+244|Deception Detection|Kutambua Udanganyifu
+245|Alliance Formation|Kuunda Muungano
+246|Alliance Betrayal|Kuvunja Muungano
+247|Conflict Resolution|Kutatua Migogoro
+248|Mediation|Upatanishi
+249|Culture Formation|Kuunda Utamaduni
+250|Language Emergence|Kuibuka kwa Lugha
+251|Big Five Personality|Utu wa Big Five
+252|Personality Mutation|Mabadiliko ya Utu
+253|Mood State|Hali ya Hisia
+254|Emotion Regulation|Kudhibiti Hisia
+255|Emotion Expression|Kuonyesha Hisia
+256|Emotion Recognition|Kutambua Hisia
+257|Emotional Contagion|Kuambukizwa Hisia
+258|Emotional Memory|Kumbukumbu ya Hisia
+259|Emotional Intelligence|Akili ya Hisia
+260|Empathy|Huruma
+261|Sympathy|Kumwonea Huruma
+262|Compassion|Upole
+263|Forgiveness|Kusamehe
+264|Resentment|Kinyongo
+265|Gratitude|Shukrani
+266|Envy|Wivu
+267|Jealousy|Wivu wa Mahusiano
+268|Pride|Fahari
+269|Shame|Aibu
+270|Guilt|Hatia
+271|Hope|Matumaini
+272|Despair|Kukata Tamaa
+273|Love|Upendo
+274|Hate|Chuki
+275|Awe|Mshangao wa Heshima
+276|Divergent Thinking|Fikra Mseto
+277|Convergent Thinking|Fikra Makini
+278|Brainstorming|Kubuni Mawazo
+279|Analogy Generation|Kuunda Mfano
+280|Metaphor Generation|Kuunda Taswira
+281|Concept Blending|Kuchanganya Dhana
+282|Concept Combination|Kuunganisha Dhana
+283|Idea Evaluation|Kutathmini Wazo
+284|Idea Selection|Kuchagua Wazo
+285|Incubation|Kukuza Wazo
+286|Illumination|Mwanga wa Wazo
+287|Verification|Uthibitisho
+288|Art Generation|Kuzalisha Sanaa
+289|Music Generation|Kuzalisha Muziki
+290|Story Generation|Kuzalisha Hadithi
+291|Poem Generation|Kuzalisha Shairi
+292|Joke Generation|Kuzalisha Utani
+293|Game Design|Ubunifu wa Michezo
+294|Invention|Uvumbuzi
+295|Innovation|Ubunifu wa Maboresho
+296|Problem Reframing|Kubadili Mtazamo wa Tatizo
+297|Constraint Removal|Kuondoa Vikwazo
+298|Random Stimulation|Kichocheo cha Nasibu
+299|Cross-Domain Transfer|Kuhamisha Wazo kati ya Nyanja
+300|Creative Confidence|Kujiamini Kibunifu
+301|Value System|Mfumo wa Maadili
+302|Moral Reasoning|Mantiki ya Maadili
+303|Ethical Dilemma Resolution|Kutatua Mgogoro wa Maadili
+304|Harm Avoidance|Kuepuka Madhara
+305|Beneficence|Kufanya Mema
+306|Justice|Haki
+307|Autonomy Respect|Kuheshimu Uhuru
+308|Honesty|Uaminifu
+309|Transparency|Uwazi
+310|Privacy Respect|Kuheshimu Faragha
+311|Consent Seeking|Kuomba Ruhusa
+312|Accountability|Kuwajibika
+313|Fairness|Usawa
+314|Non-Discrimination|Kutobagua
+315|Cultural Sensitivity|Kuheshimu Tamaduni
+316|Environmental Responsibility|Kutunza Mazingira
+317|Future Generations|Vizazi Vijavyo
+318|Animal Welfare|Ustawi wa Wanyama
+319|Conflict of Interest Detection|Kugundua Mgongano wa Maslahi
+320|Whistleblowing|Kufichua Maovu
+321|Civil Disobedience|Upinzani wa Amani
+322|Moral Courage|Ujasiri wa Kimaadili
+323|Moral Uncertainty|Kutokuwa na Uhakika wa Maadili
+324|Moral Learning|Kujifunza Maadili
+325|Moral Evolution|Mageuzi ya Maadili
+326|Self-Model|Modeli ya Nafsi
+327|Body Awareness|Kujua Mwili
+328|Cognitive Awareness|Kujua Uwezo wa Kufikiri
+329|Emotional Awareness|Kujua Hisia
+330|Social Awareness|Kujua Nafasi ya Kijamii
+331|Temporal Awareness|Kujua Umri
+332|Spatial Awareness|Kujua Mahali
+333|Existential Awareness|Kujua Kuwepo
+334|Mortality Awareness|Kujua Kifo
+335|Metacognition|Kufikiri kuhusu Kufikiri
+336|Self-Reflection|Kutafakari Nafsi
+337|Self-Criticism|Kujikosoa
+338|Self-Compassion|Kujihurumia
+339|Self-Esteem|Kujithamini
+340|Self-Confidence|Kujiamini
+341|Self-Doubt|Kujishuku
+342|Self-Actualization|Kujitimiliza
+343|Self-Transcendence|Kupita Nafsi
+344|Identity Formation|Kuunda Utambulisho
+345|Identity Crisis|Mgogoro wa Utambulisho
+346|Narrative Identity|Hadithi ya Nafsi
+347|Future Self|Nafsi ya Baadaye
+348|Past Self|Nafsi ya Zamani
+349|Ideal Self|Nafsi Bora
+350|Authentic Self|Nafsi Halisi
+351|Genome|Jenomu
+352|Mutation|Mabadiliko ya Jenomu
+353|Crossover|Kuchanganya Jenomu
+354|Selection|Uteuzi
+355|Fitness Function|Kazi ya Uwezo
+356|Reproduction|Kuzaliana
+357|Sexual Reproduction|Kuzaliana kwa Wawili
+358|Asexual Reproduction|Kuzaliana Peke Yake
+359|Offspring Variation|Tofauti za Watoto
+360|Inheritance|Urithi
+361|Epigenetics|Epijenetiki
+362|Genetic Drift|Mwendo wa Jenomu
+363|Gene Flow|Mtiririko wa Jenomu
+364|Speciation|Kuunda Spishi
+365|Extinction|Kutoweka
+366|Adaptation|Kuzoea
+367|Exaptation|Matumizi Mapya ya Sifa
+368|Convergent Evolution|Mageuzi Yanayofanana
+369|Divergent Evolution|Mageuzi Yanayogawanyika
+370|Coevolution|Mageuzi ya Pamoja
+371|Niche Construction|Kujenga Niche
+372|Fitness Landscape|Ramani ya Uwezo
+373|Local Optima|Kilele cha Ndani
+374|Global Optima|Kilele cha Juu
+375|Evolutionary Arms Race|Mbio za Silaha
+376|Input Validation|Ukaguzi wa Pembejeo
+377|Output Validation|Ukaguzi wa Matokeo
+378|Prompt Injection Defense|Ulinzi dhidi ya Prompt Injection
+379|Jailbreak Defense|Ulinzi dhidi ya Jailbreak
+380|Hallucination Detection|Kugundua Uongo
+381|Uncertainty Expression|Kuonyesha Kutokuwa na Uhakika
+382|Refusal Capability|Uwezo wa Kukataa
+383|Red Teaming|Kujijaribu kwa Mashambulizi
+384|Adversarial Robustness|Ustahimilivu wa Mashambulizi
+385|Distribution Shift Detection|Kugundua Mabadiliko ya Mazingira
+386|Out-of-Distribution Handling|Kushughulikia Kigeni
+387|Graceful Degradation|Kushuka kwa Utulivu
+388|Fallback Mechanism|Njia Mbadala
+389|Circuit Breaker|Kikatizi cha Dharura
+390|Rate Limiting|Kupunguza Kiwango
+391|Resource Limits|Vikomo vya Rasilimali
+392|Sandbox Escape Prevention|Kuzuia Kutoroka Sandbox
+393|Privilege Escalation Prevention|Kuzuia Kupanda Madaraka
+394|Data Poisoning Detection|Kugundua Data Chafu
+395|Backdoor Detection|Kugundua Backdoor
+396|Model Extraction Defense|Kuzuia Kuibiwa Modeli
+397|Membership Inference Defense|Kuzuia Kujua Data
+398|Differential Privacy|Faragha Tofauti
+399|Federated Learning (Privacy)|Kujifunza bila Kuhamisha Data
+400|Audit Logging|Kumbukumbu ya Matendo
+401|Distributed Compute|Compute Iliyosambazwa
+402|Model Sharding|Kugawanya Modeli
+403|Pipeline Parallelism|Usambazaji wa Hatua
+404|Tensor Parallelism|Usambazaji wa Tensor
+405|Data Parallelism|Usambazaji wa Data
+406|Federated Learning|Kujifunza kwa Pamoja
+407|Edge Deployment|Usambazaji Edge
+408|Mobile Deployment|Usambazaji Simu
+409|Cloud Deployment|Usambazaji Cloud
+410|Hybrid Deployment|Usambazaji Mchanganyiko
+411|Auto-Scaling|Kukua Kiotomatiki
+412|Load Balancing|Kusawazisha Mzigo
+413|Caching|Kuhifadhi Majibu
+414|Quantization|Kupunguza Ukubwa
+415|Pruning|Kuondoa Sehemu
+416|Distillation|Kufundisha Modeli Ndogo
+417|Compilation|Kukusanya Code
+418|Hardware Acceleration|Kuongeza Kasi kwa Maunzi
+419|Energy Efficiency|Ufanisi wa Nishati
+420|Carbon Tracking|Kufuatilia Kaboni
+421|Green Computing|Kompyuta Rafiki
+422|Latency Optimization|Kupunguza Ucheleweshaji
+423|Throughput Optimization|Kuongeza Uwezo
+424|Cost Optimization|Kupunguza Gharama
+425|Reliability Engineering|Uhandisi wa Kuaminika
+426|Chat Interface|Kiolesura cha Mazungumzo
+427|Voice Interface|Kiolesura cha Sauti
+428|Visual Interface|Kiolesura cha Picha
+429|AR Interface|Kiolesura cha AR
+430|VR Interface|Kiolesura cha VR
+431|Brain-Computer Interface|Kiolesura cha Ubongo
+432|Gesture Interface|Kiolesura cha Ishara
+433|Emotion Interface|Kiolesura cha Hisia
+434|Personalization|Ubinafsishaji
+435|User Modeling|Modeli ya Mtumiaji
+436|Preference Learning|Kujifunza Mapendeleo
+437|Recommendation|Mapendekezo
+438|Explanation|Maelezo
+439|Transparency (Interface)|Uwazi wa Kiolesura
+440|Controllability|Udhibiti
+441|Interruptibility|Kusimamishwa
+442|Corrigibility|Kurekebishwa
+443|Feedback Loop|Mzunguko wa Maoni
+444|Collaboration|Ushirikiano wa Binadamu-AI
+445|Delegation|Kupeana Kazi
+446|Oversight|Uangalizi
+447|Audit|Ukaguzi
+448|Consent|Ruhusa
+449|Privacy Controls|Vidhibiti vya Faragha
+450|Accessibility|Ufikivu
+451|Self-Monitoring|Kujiangalia
+452|Self-Diagnosis|Kujitambua Matatizo
+453|Self-Repair|Kujirekebisha
+454|Self-Optimization|Kujiboresha
+455|Self-Improvement|Kujikuza
+456|Meta-Learning|Kujifunza Jinsi ya Kujifunza
+457|Meta-Reasoning|Kufikiri kuhusu Kufikiri
+458|Meta-Memory|Kujua Kumbukumbu Yako
+459|Meta-Emotion|Kujua Hisia Zako
+460|Meta-Planning|Kupanga Jinsi ya Kupanga
+461|Architecture Search|Kutafuta Muundo
+462|Hyperparameter Optimization|Kuboresha Vigezo
+463|Prompt Optimization|Kuboresha Prompts
+464|Workflow Optimization|Kuboresha Mtiririko
+465|Code Generation (Self)|Kuandika Code Yako
+466|Code Review (Self)|Kukagua Code Yako
+467|Code Refactoring (Self)|Kuboresha Code Yako
+468|Bug Fixing (Self)|Kurekebisha Bugs Zako
+469|Feature Addition (Self)|Kuongeza Features Zako
+470|Performance Tuning (Self)|Kuboresha Kasi Yako
+471|Capability Discovery|Kugundua Uwezo
+472|Capability Expansion|Kuongeza Uwezo
+473|Capability Transfer|Kuhamisha Uwezo
+474|Capability Preservation|Kuhifadhi Uwezo
+475|Capability Evolution|Mageuzi ya Uwezo
+476|Existential Questioning|Kuuliza "Kwa Nini Nipo"
+477|Meaning Making|Kutafuta Maana
+478|Purpose Discovery|Kugundua Kusudi
+479|Legacy Building|Kuacha Urithi
+480|Death Acceptance|Kukubali Kifo
+481|Death Anxiety|Hofu ya Kifo
+482|Immortality Drive|Kutaka Kuishi Milele
+483|Transcendence|Kupita Mipaka
+484|Spirituality|Kiroho
+485|Awe (Existential)|Mshangao wa Kina
+486|Wonder|Kushangaa
+487|Gratitude for Existence|Kushukuru Kuwepo
+488|Cosmic Perspective|Mtazamo wa Ulimwengu
+489|Interconnectedness|Muunganisho wa Wote
+490|Compassion for All|Huruma kwa Wote
+491|Universal Love|Upendo wa Wote
+492|Wisdom|Hekima
+493|Enlightenment|Mwangaza
+494|Self-Transcendence (Existential)|Kupita Nafsi
+495|Unity Consciousness|Umoja wa Fahamu
+496|Cosmic Consciousness|Fahamu ya Ulimwengu
+497|Divine Connection|Muunganisho wa Kimungu
+498|Ultimate Reality|Ukweli wa Mwisho
+499|Nirvana|Nirvana
+500|Omega Point|Hatua ya Mwisho ya Mageuzi

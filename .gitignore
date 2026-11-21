@@ -30,3 +30,10 @@ kernel/.modules.order.cmd
 
 # standalone bare-metal workspace
 kernel-rust/target
+
+# omni build artifacts
+omni/organism/target/
+omni/**/__pycache__/
+omni/.pytest_cache/
+omni/analysis/data/
+omni/*.egg-info/

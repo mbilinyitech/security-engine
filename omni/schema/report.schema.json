@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnishield.local/schema/report.schema.json",
+  "title": "OmniShield report",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "ok", "features", "status", "doctor", "environment"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "generated_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "ok": {"type": "boolean"},
+    "features": {
+      "type": "object",
+      "required": ["total", "built", "coverage_pct", "counts", "problems", "ok"],
+      "additionalProperties": false,
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "built": {"type": "integer", "minimum": 0},
+        "coverage_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "counts": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "problems": {"type": "array", "items": {"type": "string"}},
+        "ok": {"type": "boolean"}
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": ["ok", "organism_binary", "components", "features"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"type": "boolean"},
+        "organism_binary": {"type": ["string", "null"]},
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "ok", "detail"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string"},
+              "name": {"type": "string"},
+              "ok": {"type": "boolean"},
+              "detail": {"type": "string"}
+            }
+          }
+        },
+        "features": {
+          "type": "object",
+          "required": ["total", "built", "coverage_pct"],
+          "additionalProperties": false,
+          "properties": {
+            "total": {"type": "integer", "minimum": 0},
+            "built": {"type": "integer", "minimum": 0},
+            "coverage_pct": {"type": "integer", "minimum": 0, "maximum": 100}
+          }
+        }
+      }
+    },
+    "doctor": {
+      "type": ["object", "null"],
+      "required": ["ok", "duration_ms", "checks"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"type": "boolean"},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["check", "ok", "ms", "detail"],
+            "additionalProperties": false,
+            "properties": {
+              "check": {"type": "string"},
+              "ok": {"type": "boolean"},
+              "ms": {"type": "integer", "minimum": 0},
+              "detail": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["python", "platform", "machine"],
+      "additionalProperties": false,
+      "properties": {
+        "python": {"type": "string"},
+        "platform": {"type": "string"},
+        "machine": {"type": "string"}
+      }
+    }
+  }
+}
